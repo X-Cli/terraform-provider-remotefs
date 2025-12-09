@@ -28,12 +28,21 @@ resource "remotefs_file" "example" {
   file_content = "local.txt"
 }
 
-# Create a file containing a random value on two different servers: a shared secret
+# Create a file containing a random identifier
+resource "random_pet" "identifier" {
+  length = 4
+}
 
-variable "renew_secrets" {
-  description = "Set to true to renew shared secrets"
-  type        = bool
-  default     = false
+resource "remotefs_file" "remote_id" {
+  path           = "/my-id"
+  inline_content = random_pet.identifier.id
+}
+
+# Create a file containing a random secret on two different servers: a shared secret
+variable "secret_version" {
+  description = "Increment value when the secrets need to be rolled"
+  type        = number
+  default     = 0
 }
 
 variable "private_key_passphrase" {
@@ -48,13 +57,15 @@ resource "random_bytes" "salt" {
 }
 
 ephemeral "random_password" "shared_secret" {
-  count  = var.renew_secrets ? 1 : 0
   length = 16
 }
 
 resource "remotefs_file" "shared_secret_srv1" {
+  keepers = {
+    secret_version = var.secret_version
+  }
   path           = "/shared_secret.txt"
-  inline_content = var.renew_secrets ? ephemeral.random_password.shared_secret.result : null
+  inline_content = ephemeral.random_password.shared_secret.result
   hash_salt      = random_bytes.salt.hex
   webdav = {
     base_url               = "https://dav1.broken-by-design.fr/"
@@ -67,8 +78,11 @@ resource "remotefs_file" "shared_secret_srv1" {
 }
 
 resource "remotefs_file" "shared_secret_srv2" {
+  keepers = {
+    secret_version = var.secret_version
+  }
   path           = "/shared_secret.txt"
-  inline_content = var.renew_secrets ? ephemeral.random_password.shared_secret.result : null
+  inline_content = ephemeral.random_password.shared_secret.result
   hash_salt      = random_bytes.salt.hex
   webdav = {
     base_url               = "https://dav2.broken-by-design.fr/"
@@ -120,6 +134,7 @@ Setting this attribute to an empty string does count as a valid value and corres
 This attribute is write-only, which means that the specified content is not stored in state, and ephemeral values can be used to set it. As such, setting this property to a sensitive value like a password can be done securely. If you do specify a password, please consider specifying the hash_salt property as well so that the hash algorithm used to compare the managed file content and this property value is appropriate and secure (Argon2ID of the SHA-512 of the file, instead of just SHA-512 of the file).
 
 This attribute conflicts with the file_content attribute.
+- `keepers` (Map of String) Arbitrary map of values that, when changed, will trigger recreation of resource. This is the same thing as hashicorp/random random_id keepers.
 - `owner` (Attributes) An object to specify the owner of the managed resource.
 
 This value is ignored when managing a WebDAV resource.
@@ -135,14 +150,6 @@ If this configuration value is not specified, the value defined at the provider 
 Exactly one connection type must be specified (currently only WebDAV is supported).
 
 If the connection information is provided both at the provider level and at the resource level, the resource level information is preferred and used. (see [below for nested schema](#nestedatt--webdav))
-
-### Read-Only
-
-- `hash` (String, Sensitive) The digest of the managed file content.
-
-This digest is computed automatically when the content of the managed file is changed.
-
-The content is hashed with SHA-512. An additional hashing is performed using Argon2ID if the hash_salt property is set.
 
 <a id="nestedatt--group"></a>
 ### Nested Schema for `group`

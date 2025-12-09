@@ -1,3 +1,6 @@
+# Copyright (c) Florian Maury
+# SPDX-License-Identifier: BSD-2-Clause
+
 version: "2"
 linters:
   default: none

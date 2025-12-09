@@ -292,7 +292,7 @@ func (d *Directory) Read(ctx context.Context, req resource.ReadRequest, resp *re
 	if wdc != nil {
 		fi, err := wdc.Stat(ctx, resourceData.Path.ValueString())
 		if err != nil {
-			resp.Diagnostics.AddError("failed to stat directory", fmt.Sprintf("failed to state directory: %s", err.Error()))
+			resp.Diagnostics.AddError("failed to stat directory", fmt.Sprintf("failed to stat directory: %s", err.Error()))
 			return
 		}
 		if !fi.IsDir {

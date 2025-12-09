@@ -16,7 +16,7 @@ resource "random_pet" "identifier" {
 }
 
 resource "remotefs_file" "remote_id" {
-  path = "/my-id"
+  path           = "/my-id"
   inline_content = random_pet.identifier.id
 }
 
