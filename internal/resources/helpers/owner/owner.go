@@ -14,5 +14,5 @@ type Owner struct {
 
 type Group struct {
 	Name types.String `tfsdk:"name"`
-	GIF  types.Int64  `tfsdk:"gid"`
+	GID  types.Int64  `tfsdk:"gid"`
 }

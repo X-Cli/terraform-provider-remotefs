@@ -22,6 +22,7 @@ import (
 	"github.com/hashicorp/go-version"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -93,6 +94,9 @@ The content must be a list of PEM-encoded X.509 certificates.
 						Optional: true,
 						Validators: []validator.String{
 							&cafile.CAFileValidator{},
+							stringvalidator.ConflictsWith(
+								path.MatchRelative().AtParent().AtName("ca_file_path"),
+							),
 						},
 					},
 					"ca_file_path": schema.StringAttribute{
@@ -103,6 +107,9 @@ This file content must be a list of PEM-encoded X.509 certificates, similar to t
 						Optional: true,
 						Validators: []validator.String{
 							&cafile.CAFilePathValidator{},
+							stringvalidator.ConflictsWith(
+								path.MatchRelative().AtParent().AtName("ca_file"),
+							),
 						},
 					},
 					"authentication_method": schema.StringAttribute{
@@ -122,27 +129,108 @@ If this attribute is not specified, no authentication is attempted. Acceptable v
 					"username": schema.StringAttribute{
 						Description: `The username to use when authenticating with the HTTP Basic authentication scheme.`,
 						Optional:    true,
+						Validators: []validator.String{
+							stringvalidator.ConflictsWith(
+								path.MatchRelative().AtParent().AtName("private_key"),
+								path.MatchRelative().AtParent().AtName("private_key_passphrase"),
+								path.MatchRelative().AtParent().AtName("private_key_path"),
+								path.MatchRelative().AtParent().AtName("certificate"),
+								path.MatchRelative().AtParent().AtName("certificate_path"),
+							),
+							stringvalidator.AlsoRequires(
+								path.MatchRelative().AtParent().AtName("password"),
+								path.MatchRelative().AtParent().AtName("authentication_method"),
+							),
+						},
 					},
 					"password": schema.StringAttribute{
 						Description: `The password to use when authenticating with the HTTP Basic authentication scheme. This attribute is write-only, so it can be set with an ephemeral value that will not be stored in state.`,
 						Optional:    true,
 						Sensitive:   true,
+						Validators: []validator.String{
+							stringvalidator.ConflictsWith(
+								path.MatchRelative().AtParent().AtName("private_key"),
+								path.MatchRelative().AtParent().AtName("private_key_passphrase"),
+								path.MatchRelative().AtParent().AtName("private_key_path"),
+								path.MatchRelative().AtParent().AtName("certificate"),
+								path.MatchRelative().AtParent().AtName("certificate_path"),
+							),
+							stringvalidator.AlsoRequires(
+								path.MatchRelative().AtParent().AtName("username"),
+								path.MatchRelative().AtParent().AtName("authentication_method"),
+							),
+						},
 					},
 					"private_key": schema.StringAttribute{
 						Description: `The private key to use when authenticating using mTLS. The key must be encoded with the PKCS#8 format. This attribute is write-only, so it can be set with an ephemeral value that will not be stored in state.`,
 						Optional:    true,
 						Sensitive:   true,
+						Validators: []validator.String{
+							stringvalidator.ConflictsWith(
+								path.MatchRelative().AtParent().AtName("username"),
+								path.MatchRelative().AtParent().AtName("password"),
+								path.MatchRelative().AtParent().AtName("private_key_path"),
+							),
+							stringvalidator.Any(
+								stringvalidator.AlsoRequires(path.MatchRelative().AtParent().AtName("certificate")),
+								stringvalidator.AlsoRequires(path.MatchRelative().AtParent().AtName("certificate_path")),
+							),
+							stringvalidator.AlsoRequires(
+								path.MatchRelative().AtParent().AtName("authentication_method"),
+							),
+							stringvalidator.Any(
+								stringvalidator.AlsoRequires(path.MatchRelative().AtParent().AtName("ca_file")),
+								stringvalidator.AlsoRequires(path.MatchRelative().AtParent().AtName("ca_file_path")),
+							),
+						},
 					},
 					"private_key_passphrase": schema.StringAttribute{
 						Description: `The passphrase used to encrypt the specified private key. This attribute is optional. If it is not specified, the private key is assumed to be stored unencrypted. This attribute is write-only, so it can be set with an ephemeral value that will not be stored in state.`,
 						Optional:    true,
 						Sensitive:   true,
+						Validators: []validator.String{
+							stringvalidator.Any(
+								stringvalidator.AlsoRequires(path.MatchRelative().AtParent().AtName("private_key")),
+								stringvalidator.AlsoRequires(path.MatchRelative().AtParent().AtName("private_key_path")),
+							),
+							stringvalidator.Any(
+								stringvalidator.AlsoRequires(path.MatchRelative().AtParent().AtName("certificate")),
+								stringvalidator.AlsoRequires(path.MatchRelative().AtParent().AtName("certificate_path")),
+							),
+							stringvalidator.ConflictsWith(
+								path.MatchRelative().AtParent().AtName("username"),
+								path.MatchRelative().AtParent().AtName("password"),
+							),
+							stringvalidator.AlsoRequires(
+								path.MatchRelative().AtParent().AtName("authentication_method"),
+							),
+							stringvalidator.Any(
+								stringvalidator.AlsoRequires(path.MatchRelative().AtParent().AtName("ca_file")),
+								stringvalidator.AlsoRequires(path.MatchRelative().AtParent().AtName("ca_file_path")),
+							),
+						},
 					},
 					"private_key_path": schema.StringAttribute{
 						Description: `The path to a local file containing the private key to use when authenticating using mTLS.`,
 						Optional:    true,
 						Validators: []validator.String{
 							&files.FileValidator{},
+							stringvalidator.ConflictsWith(
+								path.MatchRelative().AtParent().AtName("username"),
+								path.MatchRelative().AtParent().AtName("password"),
+								path.MatchRelative().AtParent().AtName("private_key"),
+							),
+							stringvalidator.Any(
+								stringvalidator.AlsoRequires(path.MatchRelative().AtParent().AtName("certificate")),
+								stringvalidator.AlsoRequires(path.MatchRelative().AtParent().AtName("certificate_path")),
+							),
+							stringvalidator.AlsoRequires(
+								path.MatchRelative().AtParent().AtName("authentication_method"),
+							),
+							stringvalidator.Any(
+								stringvalidator.AlsoRequires(path.MatchRelative().AtParent().AtName("ca_file")),
+								stringvalidator.AlsoRequires(path.MatchRelative().AtParent().AtName("ca_file_path")),
+							),
 						},
 					},
 					"certificate": schema.StringAttribute{
@@ -150,6 +238,22 @@ If this attribute is not specified, no authentication is attempted. Acceptable v
 						Optional:    true,
 						Validators: []validator.String{
 							&cert.CertValidator{},
+							stringvalidator.ConflictsWith(
+								path.MatchRelative().AtParent().AtName("username"),
+								path.MatchRelative().AtParent().AtName("password"),
+								path.MatchRelative().AtParent().AtName("certificate_path"),
+							),
+							stringvalidator.Any(
+								stringvalidator.AlsoRequires(path.MatchRelative().AtParent().AtName("private_key")),
+								stringvalidator.AlsoRequires(path.MatchRelative().AtParent().AtName("private_key_path")),
+							),
+							stringvalidator.AlsoRequires(
+								path.MatchRelative().AtParent().AtName("authentication_method"),
+							),
+							stringvalidator.Any(
+								stringvalidator.AlsoRequires(path.MatchRelative().AtParent().AtName("ca_file")),
+								stringvalidator.AlsoRequires(path.MatchRelative().AtParent().AtName("ca_file_path")),
+							),
 						},
 					},
 					"certificate_path": schema.StringAttribute{
@@ -157,6 +261,22 @@ If this attribute is not specified, no authentication is attempted. Acceptable v
 						Optional:    true,
 						Validators: []validator.String{
 							&cert.CertFileValidator{},
+							stringvalidator.ConflictsWith(
+								path.MatchRelative().AtParent().AtName("username"),
+								path.MatchRelative().AtParent().AtName("password"),
+								path.MatchRelative().AtParent().AtName("certificate"),
+							),
+							stringvalidator.Any(
+								stringvalidator.AlsoRequires(path.MatchRelative().AtParent().AtName("private_key")),
+								stringvalidator.AlsoRequires(path.MatchRelative().AtParent().AtName("private_key_path")),
+							),
+							stringvalidator.Any(
+								stringvalidator.AlsoRequires(path.MatchRelative().AtParent().AtName("ca_file")),
+								stringvalidator.AlsoRequires(path.MatchRelative().AtParent().AtName("ca_file_path")),
+							),
+							stringvalidator.AlsoRequires(
+								path.MatchRelative().AtParent().AtName("authentication_method"),
+							),
 						},
 					},
 				},
