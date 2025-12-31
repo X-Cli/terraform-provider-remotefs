@@ -1291,8 +1291,7 @@ EOT
 		Steps: []resource.TestStep{
 			{
 				ConfigVariables: config.Variables{
-					"renew_secrets": config.BoolVariable(true),
-					"new_secret":    config.StringVariable("0123456789012345"),
+					"secret_version": config.IntegerVariable(0),
 				},
 				Config: commonConfig,
 				Check: func(state *terraform.State) error {
@@ -1312,50 +1311,48 @@ EOT
 					return nil
 				},
 			},
-			// {
-			// 	ConfigVariables: config.Variables{
-			// 		"renew_secrets": config.BoolVariable(false),
-			// 		"new_secret":    config.StringVariable("0123456789012346"),
-			// 	},
-			// 	Config: commonConfig,
-			// 	Check: func(state *terraform.State) error {
-			// 		f, err := davfs.OpenFile(t.Context(), "/shared_secret.txt", os.O_RDONLY, 0600)
-			// 		if err != nil {
-			// 			return err
-			// 		}
-			// 		defer f.Close()
-			// 		fileContent, err := io.ReadAll(io.LimitReader(f, 32))
-			// 		if err != nil {
-			// 			return err
-			// 		}
-			// 		if *pFirstContent != string(fileContent) {
-			// 			return fmt.Errorf("content changed: expected %q, found %q", *pFirstContent, string(fileContent))
-			// 		}
-			// 		return nil
-			// 	},
-			// },
-			// {
-			// 	ConfigVariables: config.Variables{
-			// 		"renew_secrets": config.BoolVariable(true),
-			// 		"new_secret":    config.StringVariable("0123456789012346"),
-			// 	},
-			// 	Config: commonConfig,
-			// 	Check: func(state *terraform.State) error {
-			// 		f, err := davfs.OpenFile(t.Context(), "/shared_secret.txt", os.O_RDONLY, 0600)
-			// 		if err != nil {
-			// 			return err
-			// 		}
-			// 		defer f.Close()
-			// 		fileContent, err := io.ReadAll(io.LimitReader(f, 32))
-			// 		if err != nil {
-			// 			return err
-			// 		}
-			// 		if *pFirstContent == string(fileContent) {
-			// 			return fmt.Errorf("content stayed unchanged: %q", *pFirstContent)
-			// 		}
-			// 		return nil
-			// 	},
-			// },
+			{
+				ConfigVariables: config.Variables{
+					"secret_version": config.IntegerVariable(0),
+				},
+				Config: commonConfig,
+				Check: func(state *terraform.State) error {
+					f, err := davfs.OpenFile(t.Context(), "/shared_secret.txt", os.O_RDONLY, 0600)
+					if err != nil {
+						return err
+					}
+					defer f.Close()
+					fileContent, err := io.ReadAll(io.LimitReader(f, 32))
+					if err != nil {
+						return err
+					}
+					if *pFirstContent != string(fileContent) {
+						return fmt.Errorf("content changed: expected %q, found %q", *pFirstContent, string(fileContent))
+					}
+					return nil
+				},
+			},
+			{
+				ConfigVariables: config.Variables{
+					"secret_version": config.IntegerVariable(1),
+				},
+				Config: commonConfig,
+				Check: func(state *terraform.State) error {
+					f, err := davfs.OpenFile(t.Context(), "/shared_secret.txt", os.O_RDONLY, 0600)
+					if err != nil {
+						return err
+					}
+					defer f.Close()
+					fileContent, err := io.ReadAll(io.LimitReader(f, 32))
+					if err != nil {
+						return err
+					}
+					if *pFirstContent == string(fileContent) {
+						return fmt.Errorf("content stayed unchanged: %q", *pFirstContent)
+					}
+					return nil
+				},
+			},
 		},
 	})
 
