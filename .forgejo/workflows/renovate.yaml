@@ -27,7 +27,7 @@ jobs:
         name: Checkout repository
         uses: https://codeberg.org/X_Cli/checkout@097cd845b48cfe9563da542dc8051b01aeb6346d
         with:
-          repo-sha256: true
+          repo-sha256: false
       - name: Run Self-hosted Renovate
         run: renovate --token "${{ secrets.TOKEN }}" --platform forgejo --endpoint "${{ env.FORGEJO_SERVER_URL }}" "${{ env.FORGEJO_REPOSITORY }}"
       - name: Save renovate repo cache
