@@ -1,0 +1,40 @@
+name: Renovate
+on:
+  push:
+    branches:
+      - renovate/** # self-test updates
+      - main
+  workflow_dispatch:
+  schedule:
+    - cron: '44 4 * * *'
+
+jobs:
+  renovate:
+    name: Run Renovate
+    runs-on: renovate-at-home
+    steps:
+      - name: Load renovate repo cache
+        uses: https://data.forgejo.org/actions/cache/restore@9255dc7a253b0ccc959486e2bca901246202afeb # v5.0.1
+        with:
+          path: |
+            .tmp/cache/renovate/repository
+            .tmp/cache/renovate/renovate-cache-sqlite
+            .tmp/osv
+          key: repo-cache-${{ github.run_id }}
+          restore-keys: |
+            repo-cache-
+      - id: checkout
+        name: Checkout repository
+        uses: https://codeberg.org/X_Cli/checkout@097cd845b48cfe9563da542dc8051b01aeb6346d
+        with:
+          repo-sha256: true
+      - name: Run Self-hosted Renovate
+        run: renovate --token "${{ secrets.TOKEN }}" --platform forgejo --endpoint "${{ env.FORGEJO_SERVER_URL }}" "${{ env.FORGEJO_REPOSITORY }}"
+      - name: Save renovate repo cache
+        uses: https://data.forgejo.org/actions/cache/save@9255dc7a253b0ccc959486e2bca901246202afeb # v5.0.1
+        with:
+          path: |
+            .tmp/cache/renovate/repository
+            .tmp/cache/renovate/renovate-cache-sqlite
+            .tmp/osv
+          key: repo-cache-${{ github.run_id }}
