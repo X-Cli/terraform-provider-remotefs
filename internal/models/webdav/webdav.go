@@ -17,6 +17,7 @@ import (
 	"net/url"
 	"os"
 
+	"github.com/X-Cli/terraform-provider-remotefs/internal/helpers/certificates"
 	"github.com/emersion/go-webdav"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -39,58 +40,6 @@ type ConnSpec struct {
 	PrivateKeyPath       types.String `tfsdk:"private_key_path"`
 	Certificate          types.String `tfsdk:"certificate"`
 	CertificatePath      types.String `tfsdk:"certificate_path"`
-}
-
-func (cs *ConnSpec) getRootCAs() (*x509.CertPool, diag.Diagnostics) {
-	var certificateStrings []byte
-	if certs := cs.CaFile.ValueString(); certs != "" {
-		certificateStrings = []byte(certs)
-	} else if certPath := cs.CaFilePath.ValueString(); certPath != "" {
-		var err error
-		f, err := os.Open(certPath)
-		if err != nil {
-			return nil, diag.Diagnostics{
-				diag.NewErrorDiagnostic("failed to read cert file content", fmt.Sprintf("failed to read cert file content: %s", err.Error())),
-			}
-		}
-		defer f.Close()
-		certificateStrings, err = io.ReadAll(io.LimitReader(f, 10*1024*1024))
-		if err != nil {
-			return nil, diag.Diagnostics{
-				diag.NewErrorDiagnostic("failed to read certificate file", fmt.Sprintf("failed to read certificate file: %s", err.Error())),
-			}
-		}
-	} else {
-		return nil, diag.Diagnostics{
-			diag.NewErrorDiagnostic("unhandled case: missing certificate", "unhandled case: missing certificate when using an HTTPS URL"),
-		}
-	}
-	rootCAs, err := cs.parseRootCAs(certificateStrings)
-	if err != nil {
-		return nil, diag.Diagnostics{
-			diag.NewErrorDiagnostic("failed to parse root CAs", fmt.Sprintf("failed to parse root CAs: %s", err.Error())),
-		}
-	}
-	return rootCAs, nil
-}
-
-func (cs *ConnSpec) parseRootCAs(data []byte) (*x509.CertPool, error) {
-	data = bytes.Trim(data, " \n")
-
-	pool := x509.NewCertPool()
-	for {
-		var blk *pem.Block
-		blk, data = pem.Decode(data)
-		if blk == nil {
-			break
-		}
-		cert, err := x509.ParseCertificate(blk.Bytes)
-		if err != nil {
-			return nil, err
-		}
-		pool.AddCert(cert)
-	}
-	return pool, nil
 }
 
 // GetClientCert returns the specified client certificate
@@ -237,9 +186,11 @@ func (cs *ConnSpec) getTransport() (*http.Transport, diag.Diagnostics) {
 			})
 		}
 
-		rootCAs, diags := cs.getRootCAs()
-		if diags.HasError() {
-			return nil, diags
+		rootCAs, err := certificates.GetRootCAs(cs.CaFile.ValueString(), cs.CaFilePath.ValueString())
+		if err != nil {
+			return nil, diag.Diagnostics{
+				diag.NewErrorDiagnostic(err.Error(), err.Error()),
+			}
 		}
 
 		return &http.Transport{
