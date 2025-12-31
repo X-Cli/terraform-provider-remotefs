@@ -2,6 +2,7 @@
 name: Run Go Tests
 on:
   push:
+  pull_request:
 jobs:
   go_test:
     name: Go Tests
