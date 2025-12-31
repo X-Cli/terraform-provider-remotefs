@@ -20,7 +20,7 @@ func main() {
 	flag.Parse()
 
 	opts := providerserver.ServeOpts{
-		Address: "registry.terraform.io/example_namespace/example",
+		Address: "registry.terraform.io/X-Cli/remotefs",
 		Debug:   debug,
 	}
 
