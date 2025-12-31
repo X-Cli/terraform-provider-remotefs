@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 
+	sftp_model "github.com/X-Cli/terraform-provider-remotefs/internal/models/sftp"
 	webdav_model "github.com/X-Cli/terraform-provider-remotefs/internal/models/webdav"
 	"github.com/X-Cli/terraform-provider-remotefs/internal/provider/config"
 	"github.com/X-Cli/terraform-provider-remotefs/internal/resources/directory"
@@ -16,17 +17,27 @@ import (
 	"github.com/X-Cli/terraform-provider-remotefs/internal/validators/cafile"
 	"github.com/X-Cli/terraform-provider-remotefs/internal/validators/cert"
 	"github.com/X-Cli/terraform-provider-remotefs/internal/validators/files"
+	"github.com/X-Cli/terraform-provider-remotefs/internal/validators/knownhosts"
+	sftp_validator "github.com/X-Cli/terraform-provider-remotefs/internal/validators/sftp"
+	"github.com/X-Cli/terraform-provider-remotefs/internal/validators/sshfp"
 	url_validator "github.com/X-Cli/terraform-provider-remotefs/internal/validators/url"
 	"github.com/X-Cli/terraform-provider-remotefs/internal/validators/webdav"
 	webdav_client "github.com/emersion/go-webdav"
 	"github.com/hashicorp/go-version"
+	"github.com/hashicorp/terraform-plugin-framework-validators/boolvalidator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/int32validator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/listvalidator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/objectvalidator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
+	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/pkg/sftp"
 )
 
 const (
@@ -39,11 +50,13 @@ var (
 
 type providerConfig struct {
 	WebDav *webdav_model.ConnSpec `tfsdk:"webdav"`
+	SFTP   *sftp_model.ConnSpec   `tfsdk:"sftp"`
 }
 
 type Provider struct {
 	config       providerConfig
 	webDavClient *webdav_client.Client
+	sftpClient   *sftp.Client
 }
 
 var (
@@ -68,7 +81,7 @@ func (p *Provider) Schema(ctx context.Context, req provider.SchemaRequest, resp 
 
 If the managed resource is accessed over WebDAV and this configuration value is not specified, the resource level connection info must be specified instead.
 
-At most one connection type must be specified. Currently, only WebDAV is supported.
+At most one connection type must be specified.
 
 If the connection information is provided both at the provider level and at the resource level, the resource level information is preferred and used.
 `,
@@ -282,6 +295,213 @@ If this attribute is not specified, no authentication is attempted. Acceptable v
 				},
 				Validators: []validator.Object{
 					&webdav.Validator{},
+					objectvalidator.ConflictsWith(
+						path.MatchRelative().AtParent().AtName("sftp"),
+					),
+				},
+			},
+			"sftp": schema.SingleNestedAttribute{
+				Description: `sftp specifies the connection information required to access the managed resource over SFTP.
+
+If the managed resource is accessed over SFTP and this configuration value is not specified, the resource level connection info must be specified instead.
+
+At most one connection type must be specified.
+
+If the connection information is provided both at the provider level and at the resource level, the resource level information is preferred and used.`,
+				Optional: true,
+				Attributes: map[string]schema.Attribute{
+					"address": schema.StringAttribute{
+						Description: ``,
+						Required:    true,
+					},
+					"port": schema.Int32Attribute{
+						Description: ``,
+						Optional:    true,
+						Validators: []validator.Int32{
+							int32validator.Between(1, 65535),
+						},
+					},
+					"username": schema.StringAttribute{
+						Description: ``,
+						Required:    true,
+					},
+					"password": schema.StringAttribute{
+						Description: ``,
+						Optional:    true,
+						Sensitive:   true,
+						Validators: []validator.String{
+							stringvalidator.ConflictsWith(
+								path.MatchRelative().AtParent().AtName("private_key"),
+								path.MatchRelative().AtParent().AtName("private_key_path"),
+								path.MatchRelative().AtParent().AtName("private_key_passphrase"),
+								path.MatchRelative().AtParent().AtName("use_agent"),
+								path.MatchRelative().AtParent().AtName("agent_sock_path"),
+							),
+							stringvalidator.AtLeastOneOf(
+								path.MatchRelative().AtParent().AtName("private_key"),
+								path.MatchRelative().AtParent().AtName("private_key_path"),
+								path.MatchRelative().AtParent().AtName("use_agent"),
+							),
+						},
+					},
+					"private_key": schema.StringAttribute{
+						Description: ``,
+						Optional:    true,
+						Sensitive:   true,
+						Validators: []validator.String{
+							stringvalidator.ConflictsWith(
+								path.MatchRelative().AtParent().AtName("password"),
+								path.MatchRelative().AtParent().AtName("private_key_path"),
+								path.MatchRelative().AtParent().AtName("use_agent"),
+								path.MatchRelative().AtParent().AtName("agent_sock_path"),
+							),
+							stringvalidator.AtLeastOneOf(
+								path.MatchRelative().AtParent().AtName("password"),
+								path.MatchRelative().AtParent().AtName("private_key_path"),
+								path.MatchRelative().AtParent().AtName("use_agent"),
+							),
+						},
+					},
+					"private_key_passphrase": schema.StringAttribute{
+						Description: ``,
+						Optional:    true,
+						Sensitive:   true,
+						Validators: []validator.String{
+							stringvalidator.ConflictsWith(
+								path.MatchRelative().AtParent().AtName("password"),
+								path.MatchRelative().AtParent().AtName("use_agent"),
+								path.MatchRelative().AtParent().AtName("agent_sock_path"),
+							),
+							stringvalidator.Any(
+								stringvalidator.AlsoRequires(
+									path.MatchRelative().AtParent().AtName("private_key"),
+								),
+								stringvalidator.AlsoRequires(
+									path.MatchRelative().AtParent().AtName("private_key_path"),
+								),
+							),
+						},
+					},
+					"private_key_path": schema.StringAttribute{
+						Description: ``,
+						Optional:    true,
+						Validators: []validator.String{
+							stringvalidator.ConflictsWith(
+								path.MatchRelative().AtParent().AtName("password"),
+								path.MatchRelative().AtParent().AtName("private_key"),
+								path.MatchRelative().AtParent().AtName("use_agent"),
+								path.MatchRelative().AtParent().AtName("agent_sock_path"),
+							),
+							stringvalidator.AtLeastOneOf(
+								path.MatchRelative().AtParent().AtName("password"),
+								path.MatchRelative().AtParent().AtName("private_key"),
+								path.MatchRelative().AtParent().AtName("use_agent"),
+							),
+						},
+					},
+					"use_agent": schema.BoolAttribute{
+						Description: ``,
+						Optional:    true,
+						Validators: []validator.Bool{
+							boolvalidator.ConflictsWith(
+								path.MatchRelative().AtParent().AtName("password"),
+								path.MatchRelative().AtParent().AtName("private_key"),
+								path.MatchRelative().AtParent().AtName("private_key_passphrase"),
+								path.MatchRelative().AtParent().AtName("private_key_path"),
+							),
+							boolvalidator.AtLeastOneOf(
+								path.MatchRelative().AtParent().AtName("password"),
+								path.MatchRelative().AtParent().AtName("private_key"),
+								path.MatchRelative().AtParent().AtName("private_key_path"),
+							),
+						},
+					},
+					"agent_sock_path": schema.StringAttribute{
+						Description: ``,
+						Optional:    true,
+						Validators: []validator.String{
+							stringvalidator.ConflictsWith(
+								path.MatchRelative().AtParent().AtName("password"),
+								path.MatchRelative().AtParent().AtName("private_key"),
+								path.MatchRelative().AtParent().AtName("private_key_passphrase"),
+								path.MatchRelative().AtParent().AtName("private_key_path"),
+							),
+							stringvalidator.AlsoRequires(
+								path.MatchRelative().AtParent().AtName("use_agent"),
+							),
+						},
+					},
+					"use_known_hosts": schema.BoolAttribute{
+						Description: ``,
+						Optional:    true,
+						Validators: []validator.Bool{
+							boolvalidator.AtLeastOneOf(
+								path.MatchRelative().AtParent().AtName("known_hosts_files"),
+								path.MatchRelative().AtParent().AtName("known_hosts_entries"),
+								path.MatchRelative().AtParent().AtName("use_sshfp"),
+							),
+							&knownhosts.FileValidator{},
+						},
+					},
+					"known_hosts_files": schema.ListAttribute{
+						Description: ``,
+						Optional:    true,
+						ElementType: types.StringType,
+						Validators: []validator.List{
+							listvalidator.AtLeastOneOf(
+								path.MatchRelative().AtParent().AtName("use_known_hosts"),
+								path.MatchRelative().AtParent().AtName("known_hosts_entries"),
+								path.MatchRelative().AtParent().AtName("use_sshfp"),
+							),
+							&knownhosts.FileValidator{},
+						},
+					},
+					"known_hosts_entries": schema.ListAttribute{
+						Description: ``,
+						Optional:    true,
+						ElementType: types.StringType,
+						Validators: []validator.List{
+							listvalidator.AtLeastOneOf(
+								path.MatchRelative().AtParent().AtName("use_known_hosts"),
+								path.MatchRelative().AtParent().AtName("known_hosts_files"),
+								path.MatchRelative().AtParent().AtName("use_sshfp"),
+							),
+							&knownhosts.EntryValidator{},
+						},
+					},
+					"use_sshfp": schema.ListAttribute{
+						Description: ``,
+						Optional:    true,
+						ElementType: types.ObjectType{
+							AttrTypes: map[string]attr.Type{
+								"resolvers": types.ListType{
+									ElemType: types.ObjectType{
+										AttrTypes: map[string]attr.Type{
+											"address":  types.StringType,
+											"port":     types.Int32Type,
+											"protocol": types.StringType,
+										},
+									},
+								},
+								"ca_cert":      types.StringType,
+								"ca_cert_path": types.StringType,
+							},
+						},
+						Validators: []validator.List{
+							listvalidator.AtLeastOneOf(
+								path.MatchRelative().AtParent().AtName("use_known_hosts"),
+								path.MatchRelative().AtParent().AtName("known_hosts_files"),
+								path.MatchRelative().AtParent().AtName("known_hosts_entries"),
+							),
+							&sshfp.Validator{},
+						},
+					},
+				},
+				Validators: []validator.Object{
+					&sftp_validator.Validator{},
+					objectvalidator.ConflictsWith(
+						path.MatchRelative().AtParent().AtName("webdav"),
+					),
 				},
 			},
 		},
@@ -319,7 +539,16 @@ func (p *Provider) Configure(ctx context.Context, req provider.ConfigureRequest,
 		}
 		p.webDavClient = wdc
 		provData.WebDavClient = wdc
-		provData.ConnSpec = *provConfig.WebDav
+		provData.WebDavConnSpec = *provConfig.WebDav
+	} else if provConfig.SFTP != nil {
+		sftpClnt, diags := provConfig.SFTP.InitializeClient(ctx)
+		resp.Diagnostics.Append(diags...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		p.sftpClient = sftpClnt
+		provData.SFTPClient = sftpClnt
+		provData.SFTPConnSpec = *provConfig.SFTP
 	}
 	resp.ResourceData = provData
 }

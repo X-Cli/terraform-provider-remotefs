@@ -1361,3 +1361,64 @@ EOT
 		t.Fatal("unexpected success; resource ought to be destroyed after the test")
 	}
 }
+
+func TestSFTPDirectory(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: map[string]func() (tfprotov6.ProviderServer, error){
+			"remotefs": func() (tfprotov6.ProviderServer, error) { //nolint:unparam
+				return providerserver.NewProtocol6(provider.New())(), nil
+			},
+		},
+		Steps: []resource.TestStep{
+			{
+				Config: `provider "remotefs" {
+  sftp = {
+    address = "192.168.1.27"
+		port = 2222
+		username = "titi"
+		password = "toto"
+		known_hosts_entries = [
+      "[192.168.1.27]:2222 ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQCofufmmcaN3cVpsXoi0cZI1YHYtqVf/Qeh/lAz3c7DKI6AvV+NsWZRVVRF7YrqvzvyxHTyN53Is1T+hfRl/liQyl5L6bU+rCVCA54vrLIr4G1McrCRoNe2vqLxf/JbROEpOU24okcWZEzUYX+NM/5XR5K9qRMRwXKknikk4SWsQTBrqyZJTkXz7rc/rgWAtBj96EFJbLskSpdQakJIfsr7enE83QmjPDi8b2k8mWDiOAFZQtB5/oMM7L9DqvEYhbD78VPV1vKxtCGFBc/EpZ8Cy38o1HL+Q8YMeyEYqBNRopiHjAJ4dtVF5muVxI4AdJflnQRd0Jvx+Kr3meQ+PWtx2oDyJbuNEqnngIZC8L5erCtI/UkLgomDKLnA8J+aZCSIJKw7WNtKPk/k/2fbSHa7KUW74pT4vPZOJoQ49vW6nYEiDu3kmGhghXBQiHhiXvgsqKkfTr6T7Wfqeq7qE2Wazg2MAYu6Yheb83JElJnxLgnC9hCjoOoVYFibdFDGorAR/qdgxKacqRzbroSlkeenWR4W97buoqUMFeT4obwNXcQICi5Lj1i6HtklNh2zLBMFk/cBsggd/Lisijp7V4vyVKsKKGq2bgNHQ9dJx8Tm2ShVmE3KvHzzXnogcEWdLDTatJ3AneV8O2NmCRzvZueaEeQOU3Qa97GUANUdTnALwQ==",
+      "[192.168.1.27]:2222 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPmiUNZmGJNbhuR8ni6WUfqUfLgmR3AeN+4lxeL4qpYk",
+		]
+	}
+}
+resource "remotefs_directory" "test" {
+  path = "/upload/test"
+}
+`,
+			},
+		},
+	})
+}
+
+func TestSFTPFile(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: map[string]func() (tfprotov6.ProviderServer, error){
+			"remotefs": func() (tfprotov6.ProviderServer, error) { //nolint:unparam
+				return providerserver.NewProtocol6(provider.New())(), nil
+			},
+		},
+		Steps: []resource.TestStep{
+			{
+				Config: `provider "remotefs" {
+  sftp = {
+    address = "192.168.1.27"
+		port = 2222
+		username = "titi"
+		password = "toto"
+		known_hosts_entries = [
+      "[192.168.1.27]:2222 ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQCofufmmcaN3cVpsXoi0cZI1YHYtqVf/Qeh/lAz3c7DKI6AvV+NsWZRVVRF7YrqvzvyxHTyN53Is1T+hfRl/liQyl5L6bU+rCVCA54vrLIr4G1McrCRoNe2vqLxf/JbROEpOU24okcWZEzUYX+NM/5XR5K9qRMRwXKknikk4SWsQTBrqyZJTkXz7rc/rgWAtBj96EFJbLskSpdQakJIfsr7enE83QmjPDi8b2k8mWDiOAFZQtB5/oMM7L9DqvEYhbD78VPV1vKxtCGFBc/EpZ8Cy38o1HL+Q8YMeyEYqBNRopiHjAJ4dtVF5muVxI4AdJflnQRd0Jvx+Kr3meQ+PWtx2oDyJbuNEqnngIZC8L5erCtI/UkLgomDKLnA8J+aZCSIJKw7WNtKPk/k/2fbSHa7KUW74pT4vPZOJoQ49vW6nYEiDu3kmGhghXBQiHhiXvgsqKkfTr6T7Wfqeq7qE2Wazg2MAYu6Yheb83JElJnxLgnC9hCjoOoVYFibdFDGorAR/qdgxKacqRzbroSlkeenWR4W97buoqUMFeT4obwNXcQICi5Lj1i6HtklNh2zLBMFk/cBsggd/Lisijp7V4vyVKsKKGq2bgNHQ9dJx8Tm2ShVmE3KvHzzXnogcEWdLDTatJ3AneV8O2NmCRzvZueaEeQOU3Qa97GUANUdTnALwQ==",
+      "[192.168.1.27]:2222 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPmiUNZmGJNbhuR8ni6WUfqUfLgmR3AeN+4lxeL4qpYk",
+		]
+	}
+}
+resource "remotefs_file" "test" {
+  path = "/upload/test"
+  inline_content = "pouet"
+}
+`,
+			},
+		},
+	})
+}

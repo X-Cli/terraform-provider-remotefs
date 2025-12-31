@@ -5,12 +5,16 @@
 package config
 
 import (
+	sftp_model "github.com/X-Cli/terraform-provider-remotefs/internal/models/sftp"
 	webdav_model "github.com/X-Cli/terraform-provider-remotefs/internal/models/webdav"
 	webdav_client "github.com/emersion/go-webdav"
+	"github.com/pkg/sftp"
 )
 
 // ProviderData is the structure containing the data to be passed to the resources.
 type ProviderData struct {
-	ConnSpec     webdav_model.ConnSpec
-	WebDavClient *webdav_client.Client
+	WebDavConnSpec webdav_model.ConnSpec
+	WebDavClient   *webdav_client.Client
+	SFTPConnSpec   sftp_model.ConnSpec
+	SFTPClient     *sftp.Client
 }

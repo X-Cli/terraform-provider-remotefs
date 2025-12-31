@@ -7,20 +7,21 @@ package config
 import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
+	"github.com/X-Cli/terraform-provider-remotefs/internal/models/sftp"
 	"github.com/X-Cli/terraform-provider-remotefs/internal/models/webdav"
-	"github.com/X-Cli/terraform-provider-remotefs/internal/resources/helpers/owner"
 )
 
 type ResourceData struct {
 	WebDav          *webdav.ConnSpec `tfsdk:"webdav"`
+	SFTP            *sftp.ConnSpec   `tfsdk:"sftp"`
 	Keepers         types.Map        `tfsdk:"keepers"`
 	Path            types.String     `tfsdk:"path"`
 	InlineContent   types.String     `tfsdk:"inline_content"`
 	ContentFilePath types.String     `tfsdk:"file_content"`
 	HashSalt        types.String     `tfsdk:"hash_salt"`
 	Permissions     types.String     `tfsdk:"permissions"`
-	Owner           *owner.Owner     `tfsdk:"owner"`
-	Group           *owner.Group     `tfsdk:"group"`
+	Owner           types.Object     `tfsdk:"owner"`
+	Group           types.Object     `tfsdk:"group"`
 }
 
 // Merge can be used to merge a planned resource data (the receiver) and a configured resource data.
@@ -50,6 +51,23 @@ func (rd ResourceData) Merge(configuredResourceData ResourceData) ResourceData {
 			PrivateKeyPath:       rd.WebDav.PrivateKeyPath,
 			Certificate:          rd.WebDav.Certificate,
 			CertificatePath:      rd.WebDav.CertificatePath,
+		}
+	}
+	if rd.SFTP != nil && configuredResourceData.WebDav != nil {
+		returnedRD.SFTP = &sftp.ConnSpec{
+			Address:              rd.SFTP.Address,
+			Port:                 rd.SFTP.Port,
+			Username:             rd.SFTP.Username,
+			Password:             configuredResourceData.SFTP.Password,
+			PrivateKey:           configuredResourceData.SFTP.PrivateKey,
+			PrivateKeyPassphrase: configuredResourceData.SFTP.PrivateKeyPassphrase,
+			PrivateKeyPath:       rd.SFTP.PrivateKeyPath,
+			UseAgent:             rd.SFTP.UseAgent,
+			AgentSockPath:        rd.SFTP.AgentSockPath,
+			UseKnownHosts:        rd.SFTP.UseKnownHosts,
+			KnownHostsFiles:      rd.SFTP.KnownHostsFiles,
+			KnownHostsEntries:    rd.SFTP.KnownHostsEntries,
+			UseSSHFP:             rd.SFTP.UseSSHFP,
 		}
 	}
 
