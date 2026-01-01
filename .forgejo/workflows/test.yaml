@@ -30,13 +30,14 @@ jobs:
       - uses: https://data.forgejo.org/actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6.1.0
         with:
           go-version-file: 'go.mod'
-          cache: true
+          cache: false
       - run: go mod download
       - run: go build -v .
       - name: Run linters
         uses: https://github.com/golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0
         with:
           version: latest
+          skip-cache: true
 
   generate:
     runs-on: node-at-home
@@ -45,7 +46,7 @@ jobs:
       - uses: https://data.forgejo.org/actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6.1.0
         with:
           go-version-file: 'go.mod'
-          cache: true
+          cache: false
       # We need the latest version of Terraform for our documentation generation to use
       - uses: https://github.com/hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
         with:
@@ -74,7 +75,7 @@ jobs:
       - uses: https://data.forgejo.org/actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6.1.0
         with:
           go-version-file: 'go.mod'
-          cache: true
+          cache: false
       - uses: https://github.com/hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
         with:
           terraform_version: ${{ matrix.terraform }}
