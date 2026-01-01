@@ -1,3 +1,6 @@
+// Copyright (c) Florian Maury
+// SPDX-License-Identifier: BSD-2-Clause
+
 // Package certificates provides some helper functions to parse certificates
 package certificates
 
