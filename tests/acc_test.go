@@ -23,6 +23,7 @@ import (
 
 	"github.com/X-Cli/terraform-provider-remotefs/internal/provider"
 	"github.com/X-Cli/terraform-provider-remotefs/tests/planchecks/comparevalues"
+	"github.com/X-Cli/terraform-provider-remotefs/tests/sftpserver"
 	server "github.com/X-Cli/terraform-provider-remotefs/tests/webdav_server"
 	"github.com/hashicorp/go-version"
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
@@ -35,7 +36,9 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
 	"github.com/hashicorp/terraform-plugin-testing/tfversion"
+	"github.com/pkg/sftp"
 	"github.com/youmark/pkcs8"
+	"golang.org/x/crypto/ssh/knownhosts"
 )
 
 func TestAccDirectory(t *testing.T) {
@@ -1363,6 +1366,11 @@ EOT
 }
 
 func TestSFTPDirectory(t *testing.T) {
+	pubKey, port, sftpHandlers, err := sftpserver.StartSFTPServer(t.Context())
+	if err != nil {
+		t.Fatalf("failed to start SFTP server: %s", err.Error())
+	}
+
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: map[string]func() (tfprotov6.ProviderServer, error){
 			"remotefs": func() (tfprotov6.ProviderServer, error) { //nolint:unparam
@@ -1371,28 +1379,53 @@ func TestSFTPDirectory(t *testing.T) {
 		},
 		Steps: []resource.TestStep{
 			{
-				Config: `provider "remotefs" {
+				Config: fmt.Sprintf(`provider "remotefs" {
   sftp = {
-    address = "192.168.1.27"
-		port = 2222
+    address = "127.0.0.1"
+		port = %d
 		username = "titi"
 		password = "toto"
 		known_hosts_entries = [
-      "[192.168.1.27]:2222 ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQCofufmmcaN3cVpsXoi0cZI1YHYtqVf/Qeh/lAz3c7DKI6AvV+NsWZRVVRF7YrqvzvyxHTyN53Is1T+hfRl/liQyl5L6bU+rCVCA54vrLIr4G1McrCRoNe2vqLxf/JbROEpOU24okcWZEzUYX+NM/5XR5K9qRMRwXKknikk4SWsQTBrqyZJTkXz7rc/rgWAtBj96EFJbLskSpdQakJIfsr7enE83QmjPDi8b2k8mWDiOAFZQtB5/oMM7L9DqvEYhbD78VPV1vKxtCGFBc/EpZ8Cy38o1HL+Q8YMeyEYqBNRopiHjAJ4dtVF5muVxI4AdJflnQRd0Jvx+Kr3meQ+PWtx2oDyJbuNEqnngIZC8L5erCtI/UkLgomDKLnA8J+aZCSIJKw7WNtKPk/k/2fbSHa7KUW74pT4vPZOJoQ49vW6nYEiDu3kmGhghXBQiHhiXvgsqKkfTr6T7Wfqeq7qE2Wazg2MAYu6Yheb83JElJnxLgnC9hCjoOoVYFibdFDGorAR/qdgxKacqRzbroSlkeenWR4W97buoqUMFeT4obwNXcQICi5Lj1i6HtklNh2zLBMFk/cBsggd/Lisijp7V4vyVKsKKGq2bgNHQ9dJx8Tm2ShVmE3KvHzzXnogcEWdLDTatJ3AneV8O2NmCRzvZueaEeQOU3Qa97GUANUdTnALwQ==",
-      "[192.168.1.27]:2222 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPmiUNZmGJNbhuR8ni6WUfqUfLgmR3AeN+4lxeL4qpYk",
+      "%s",
 		]
 	}
 }
 resource "remotefs_directory" "test" {
-  path = "/upload/test"
+  path = "/test"
 }
-`,
+		`, port, knownhosts.Line([]string{knownhosts.Normalize(fmt.Sprintf("127.0.0.1:%d", port))}, pubKey)),
+				Check: func(s *terraform.State) error {
+					lister, err := sftpHandlers.FileList.Filelist(sftp.NewRequest("Stat", "/test"))
+					if err != nil {
+						return fmt.Errorf("failed to issue filelist command: %w", err)
+					}
+
+					fi := make([]os.FileInfo, 1)
+					if n, err := lister.ListAt(fi, 0); err != nil && !errors.Is(err, io.EOF) {
+						return fmt.Errorf("failed to listAt: %w", err)
+					} else if n != 1 {
+						return fmt.Errorf("unexpected number of entries: %d %v", n, fi)
+					}
+
+					if fi[0].Name() != "test" {
+						return fmt.Errorf("unexpected entry: %q", fi[0].Name())
+					}
+					if !fi[0].IsDir() {
+						return fmt.Errorf("unexpected file, should be a directory: %q", fi[0].Name())
+					}
+					return nil
+				},
 			},
 		},
 	})
 }
 
 func TestSFTPFile(t *testing.T) {
+	pubKey, port, sftpHandlers, err := sftpserver.StartSFTPServer(t.Context())
+	if err != nil {
+		t.Fatalf("failed to start SFTP server: %s", err.Error())
+	}
+
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: map[string]func() (tfprotov6.ProviderServer, error){
 			"remotefs": func() (tfprotov6.ProviderServer, error) { //nolint:unparam
@@ -1401,23 +1434,59 @@ func TestSFTPFile(t *testing.T) {
 		},
 		Steps: []resource.TestStep{
 			{
-				Config: `provider "remotefs" {
+				Config: fmt.Sprintf(`provider "remotefs" {
   sftp = {
-    address = "192.168.1.27"
-		port = 2222
+    address = "127.0.0.1"
+		port = %d
 		username = "titi"
 		password = "toto"
 		known_hosts_entries = [
-      "[192.168.1.27]:2222 ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQCofufmmcaN3cVpsXoi0cZI1YHYtqVf/Qeh/lAz3c7DKI6AvV+NsWZRVVRF7YrqvzvyxHTyN53Is1T+hfRl/liQyl5L6bU+rCVCA54vrLIr4G1McrCRoNe2vqLxf/JbROEpOU24okcWZEzUYX+NM/5XR5K9qRMRwXKknikk4SWsQTBrqyZJTkXz7rc/rgWAtBj96EFJbLskSpdQakJIfsr7enE83QmjPDi8b2k8mWDiOAFZQtB5/oMM7L9DqvEYhbD78VPV1vKxtCGFBc/EpZ8Cy38o1HL+Q8YMeyEYqBNRopiHjAJ4dtVF5muVxI4AdJflnQRd0Jvx+Kr3meQ+PWtx2oDyJbuNEqnngIZC8L5erCtI/UkLgomDKLnA8J+aZCSIJKw7WNtKPk/k/2fbSHa7KUW74pT4vPZOJoQ49vW6nYEiDu3kmGhghXBQiHhiXvgsqKkfTr6T7Wfqeq7qE2Wazg2MAYu6Yheb83JElJnxLgnC9hCjoOoVYFibdFDGorAR/qdgxKacqRzbroSlkeenWR4W97buoqUMFeT4obwNXcQICi5Lj1i6HtklNh2zLBMFk/cBsggd/Lisijp7V4vyVKsKKGq2bgNHQ9dJx8Tm2ShVmE3KvHzzXnogcEWdLDTatJ3AneV8O2NmCRzvZueaEeQOU3Qa97GUANUdTnALwQ==",
-      "[192.168.1.27]:2222 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPmiUNZmGJNbhuR8ni6WUfqUfLgmR3AeN+4lxeL4qpYk",
+      "%s",
 		]
 	}
 }
 resource "remotefs_file" "test" {
-  path = "/upload/test"
+  path = "/test"
   inline_content = "pouet"
 }
-`,
+`, port, knownhosts.Line([]string{knownhosts.Normalize(fmt.Sprintf("127.0.0.1:%d", port))}, pubKey)),
+				Check: func(s *terraform.State) error {
+					lister, err := sftpHandlers.FileList.Filelist(sftp.NewRequest("Stat", "/test"))
+					if err != nil {
+						return fmt.Errorf("failed to issue filelist command: %w", err)
+					}
+
+					fi := make([]os.FileInfo, 1)
+					if n, err := lister.ListAt(fi, 0); err != nil && !errors.Is(err, io.EOF) {
+						return fmt.Errorf("failed to listAt: %w", err)
+					} else if n != 1 {
+						return fmt.Errorf("unexpected number of entries: %d %v", n, fi)
+					}
+
+					if fi[0].Name() != "test" {
+						return fmt.Errorf("unexpected entry: %q", fi[0].Name())
+					}
+					if fi[0].IsDir() {
+						return fmt.Errorf("unexpected dir, should be a file: %q", fi[0].Name())
+					}
+
+					readReq := sftp.NewRequest("Get", "/test")
+					readReq.Flags |= 1 // Read (sshFxfRead)
+					rdAt, err := sftpHandlers.FileGet.Fileread(readReq)
+					if err != nil {
+						return fmt.Errorf("failed to open file: %w", err)
+					}
+					var buffer [4096]byte
+					if n, err := rdAt.ReadAt(buffer[:], 0); err != nil && !errors.Is(err, io.EOF) {
+						return fmt.Errorf("failed to read from file: %w", err)
+					} else if n != 5 {
+						return fmt.Errorf("unexpected read size: %d", n)
+					}
+					if !bytes.Equal(buffer[:5], []byte("pouet")) {
+						return fmt.Errorf("unexpected file content: %q", string(buffer[:5]))
+					}
+					return nil
+				},
 			},
 		},
 	})
