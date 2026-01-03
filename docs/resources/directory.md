@@ -54,6 +54,13 @@ Only one of the name and uid properties can be set at the same time. (see [below
 - `permissions` (String) An octal value representing the UNIX-like permissions to the mananged resource. The format can be 777, 0777 or 0o777.
 
 This value is ignored when managing a WebDAV resource.
+- `sftp` (Attributes) sftp specifies the connection information required to access the managed resource over SFTP.
+	
+If this configuration value not the webdav value are not specified, the value defined at the provider level is used instead.
+
+Exactly one connection type must be specified.
+
+If the connection information is provided both at the provider level and at the resource level, the resource level information is preferred and used. (see [below for nested schema](#nestedatt--sftp))
 - `webdav` (Attributes) webdav specifies the connection information required to access the managed resource.
 
 If the managed resource is accessed over WebDAV and this configuration value is not specified, the value defined at the provider level is used instead.
@@ -94,6 +101,49 @@ This value conflicts with the uid property of this object.
 This value is ignored when managing a WebDAV resource.
 
 This value conflicts with the name property of this object.
+
+
+<a id="nestedatt--sftp"></a>
+### Nested Schema for `sftp`
+
+Required:
+
+- `address` (String)
+- `username` (String)
+
+Optional:
+
+- `agent_sock_path` (String)
+- `known_hosts_entries` (List of String)
+- `known_hosts_files` (List of String)
+- `password` (String, Sensitive, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments))
+- `port` (Number)
+- `private_key` (String, Sensitive, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments))
+- `private_key_passphrase` (String, Sensitive, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments))
+- `private_key_path` (String)
+- `use_agent` (Boolean)
+- `use_known_hosts` (Boolean)
+- `use_sshfp` (List of Object) (see [below for nested schema](#nestedatt--sftp--use_sshfp))
+
+<a id="nestedatt--sftp--use_sshfp"></a>
+### Nested Schema for `sftp.use_sshfp`
+
+Optional:
+
+- `ca_file` (String)
+- `ca_file_path` (String)
+- `resolvers` (List of Object) (see [below for nested schema](#nestedobjatt--sftp--use_sshfp--resolvers))
+
+<a id="nestedobjatt--sftp--use_sshfp--resolvers"></a>
+### Nested Schema for `sftp.use_sshfp.resolvers`
+
+Optional:
+
+- `address` (String)
+- `port` (Number)
+- `protocol` (String)
+
+
 
 
 <a id="nestedatt--webdav"></a>

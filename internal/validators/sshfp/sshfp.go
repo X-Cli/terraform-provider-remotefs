@@ -1,3 +1,6 @@
+// Copyright (c) Florian Maury
+// SPDX-License-Identifier: BSD-2-Clause
+
 // Package sshfp validates a sshfp config consisting of a list of DNS resolvers and how to secure the communication with them
 package sshfp
 

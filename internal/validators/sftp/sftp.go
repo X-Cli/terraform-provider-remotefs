@@ -1,3 +1,6 @@
+// Copyright (c) Florian Maury
+// SPDX-License-Identifier: BSD-2-Clause
+
 // Package sftp provides a validator for sftp connection object
 package sftp
 
