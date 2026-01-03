@@ -15,13 +15,17 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"strconv"
 
 	provider_config "github.com/X-Cli/terraform-provider-remotefs/internal/provider/config"
 	resource_config "github.com/X-Cli/terraform-provider-remotefs/internal/resources/file/config"
+	"github.com/X-Cli/terraform-provider-remotefs/internal/resources/helpers/owner"
+	sftp_config "github.com/X-Cli/terraform-provider-remotefs/internal/resources/helpers/sftp"
 	webdav_resource "github.com/X-Cli/terraform-provider-remotefs/internal/resources/helpers/webdav"
 	webdav_validator "github.com/X-Cli/terraform-provider-remotefs/internal/validators/webdav"
 	webdav_client "github.com/emersion/go-webdav"
 	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/objectvalidator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -34,6 +38,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
+	"github.com/pkg/sftp"
 	"golang.org/x/crypto/argon2"
 )
 
@@ -75,7 +80,7 @@ func newFileIdentityFromWebDav(rs resource_config.ResourceData, providerData pro
 	if rs.WebDav != nil {
 		urlToParse = rs.WebDav.BaseURL.ValueString()
 	} else {
-		urlToParse = providerData.ConnSpec.BaseURL.ValueString()
+		urlToParse = providerData.WebDavConnSpec.BaseURL.ValueString()
 	}
 	parsedURL, err := url.Parse(urlToParse)
 	if err != nil {
@@ -132,16 +137,30 @@ At the moment, only WebDAV is supported as a transport protocol but others will 
 		Attributes: map[string]schema.Attribute{
 			"webdav": schema.SingleNestedAttribute{
 				Attributes: webdav_resource.ConnSpec,
-				Description: `webdav specifies the connection information required to access the managed resource.
+				Description: `webdav specifies the connection information required to access the managed resource over WebDAV/HTTP.
 
-If this configuration value is not specified, the value defined at the provider level is used instead.
+If this configuration value nor the sftp value are not specified, the value defined at the provider level is used instead.
 
-Exactly one connection type must be specified (currently only WebDAV is supported).
+Exactly one connection type must be specified.
 
 If the connection information is provided both at the provider level and at the resource level, the resource level information is preferred and used.`,
 				Optional: true,
 				Validators: []validator.Object{
 					&webdav_validator.Validator{},
+				},
+			},
+			"sftp": schema.SingleNestedAttribute{
+				Attributes: sftp_config.ConnSpec,
+				Description: `sftp specifies the connection information required to access the managed resource over SFTP.
+	
+If this configuration value not the webdav value are not specified, the value defined at the provider level is used instead.
+
+Exactly one connection type must be specified.
+
+If the connection information is provided both at the provider level and at the resource level, the resource level information is preferred and used.`,
+				Optional:   true,
+				Validators: []validator.Object{
+					// TODO validator
 				},
 			},
 			"keepers": schema.MapAttribute{
@@ -209,6 +228,7 @@ When this attribute is set, the file content hash is computed using the Argon2ID
 This value is ignored when managing a WebDAV resource.
 `,
 				Optional: true,
+				Computed: true,
 				Validators: []validator.String{
 					stringvalidator.RegexMatches(regexp.MustCompile("^(?:^(?:0o?)?[0-7]{3})?$"), "mode must be expressed as an octal value: 777, 0777 or 0o777"),
 				},
@@ -223,6 +243,7 @@ This value is ignored when managing a WebDAV resource.
 This value conflicts with the uid property of this object.
 `,
 						Optional: true,
+						Computed: true,
 						Validators: []validator.String{
 							stringvalidator.ConflictsWith(
 								path.MatchRelative().AtParent().AtName("uid"),
@@ -237,8 +258,12 @@ This value is ignored when managing a WebDAV resource.
 This value conflicts with the name property of this object.
 `,
 						Optional: true,
+						Computed: true,
 						Validators: []validator.Int64{
 							int64validator.AtLeast(0),
+							int64validator.ConflictsWith(
+								path.MatchRelative().AtParent().AtName("name"),
+							),
 						},
 					},
 				},
@@ -249,6 +274,10 @@ This value is ignored when managing a WebDAV resource.
 Only one of the name and uid properties can be set at the same time.
 `,
 				Optional: true,
+				Computed: true,
+				Validators: []validator.Object{
+					objectvalidator.AlsoRequires(path.MatchRelative().AtParent().AtName("group")),
+				},
 			},
 			"group": schema.SingleNestedAttribute{
 				Attributes: map[string]schema.Attribute{
@@ -260,6 +289,7 @@ This value is ignored when managing a WebDAV resource.
 This value conflicts with the gid property of this object.
 `,
 						Optional: true,
+						Computed: true,
 						Validators: []validator.String{
 							stringvalidator.ConflictsWith(
 								path.MatchRelative().AtParent().AtName("gid"),
@@ -274,8 +304,12 @@ This value is ignored when managing a WebDAV resource.
 This value conflicts with the name property of this object.
 `,
 						Optional: true,
+						Computed: true,
 						Validators: []validator.Int64{
 							int64validator.AtLeast(0),
+							int64validator.ConflictsWith(
+								path.MatchRelative().AtParent().AtName("name"),
+							),
 						},
 					},
 				},
@@ -286,10 +320,16 @@ This value is ignored when managing a WebDAV resource.
 Only one of the name and gid properties can be set at the same time.
 `,
 				Optional: true,
+				Computed: true,
+				Validators: []validator.Object{
+					objectvalidator.AlsoRequires(path.MatchRelative().AtParent().AtName("owner")),
+				},
 			},
 		},
 	}
 }
+
+// TODO ajotuer un validateur qui s'assure que si webdav est utilisé, alors permissions owner et group doivent être nil et si sftp est utilisé owner.name et group.name sont nil
 
 func (f *File) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
 	if req.ProviderData != nil {
@@ -297,18 +337,180 @@ func (f *File) Configure(ctx context.Context, req resource.ConfigureRequest, res
 	}
 }
 
-func (f *File) getClients(resourceData resource_config.ResourceData) (*webdav_client.Client, diag.Diagnostics) {
+func (f *File) getClients(ctx context.Context, resourceData resource_config.ResourceData) (*webdav_client.Client, *sftp.Client, diag.Diagnostics) {
+	var diags diag.Diagnostics
 	var wdc *webdav_client.Client
+	var sftpc *sftp.Client
 	if resourceData.WebDav != nil {
-		var diags diag.Diagnostics
 		wdc, diags = resourceData.WebDav.InitializeClient()
 		if diags.HasError() {
-			return nil, diags
+			return nil, nil, diags
 		}
 	} else if f.providerData.WebDavClient != nil {
 		wdc = f.providerData.WebDavClient
+	} else if resourceData.SFTP != nil {
+		sftpc, diags = resourceData.SFTP.InitializeClient(ctx)
+		if diags.HasError() {
+			return nil, nil, diags
+		}
+	} else if f.providerData.SFTPClient != nil {
+		sftpc = f.providerData.SFTPClient
 	}
-	return wdc, nil
+	return wdc, sftpc, diags
+}
+
+func (f *File) writeToFileAndComputeHash(w io.Writer, rd resource_config.ResourceData) (computedHash string, diags diag.Diagnostics) {
+	contentHash := sha512.New()
+
+	if !rd.InlineContent.IsNull() {
+		contentByte := []byte(rd.InlineContent.ValueString())
+		if n, err := w.Write(contentByte); err != nil {
+			diags.AddError("failed to write to new file", fmt.Sprintf("failed to write to new file: %s", err.Error()))
+			return
+		} else if len(contentByte) > n {
+			diags.AddError("truncated write to new file", fmt.Sprintf("truncated write to new file: %d/%d", n, len(contentByte)))
+			return
+		}
+
+		if n, err := contentHash.Write(contentByte); err != nil {
+			diags.AddError("failed to write to file hash", fmt.Sprintf("failed to write to file hash: %s", err.Error()))
+			return
+		} else if len(contentByte) > n {
+			diags.AddError("truncated write to file hash", fmt.Sprintf("truncated write to file hash: %d/%d", n, len(contentByte)))
+			return
+		}
+	} else if !rd.ContentFilePath.IsNull() {
+		f, err := os.Open(rd.ContentFilePath.ValueString())
+		if err != nil {
+			diags.AddError("failed to open file", fmt.Sprintf("failed to open file: %s", err.Error()))
+			return
+		}
+		defer f.Close()
+		for {
+			var buf [4096]byte
+			nr, err := f.Read(buf[:])
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				diags.AddError("failed to read from file", fmt.Sprintf("failed to read from file: %s", err.Error()))
+				return
+			}
+
+			if nw, err := w.Write(buf[:nr]); err != nil {
+				diags.AddError("failed to write content to the server", fmt.Sprintf("failed to write content to the server: %s", err.Error()))
+				return
+			} else if nw < nr {
+				diags.AddError("truncated write content to the server", fmt.Sprintf("truncated write content to the server: %d/%d", nw, nr))
+				return
+			}
+
+			if nw, err := contentHash.Write(buf[:nr]); err != nil {
+				diags.AddError("failed to hash content", fmt.Sprintf("failed to hash content: %s", err.Error()))
+				return
+			} else if nw < nr {
+				diags.AddError("truncated hashed content", fmt.Sprintf("truncated hashed content: %d/%d", nw, nr))
+				return
+			}
+		}
+	}
+
+	computedHash = hex.EncodeToString(contentHash.Sum(nil))
+	if hashSalt := rd.HashSalt.ValueString(); hashSalt != "" {
+		var err error
+		computedHash, err = hashWithArgon2ID(computedHash, hashSalt)
+		if err != nil {
+			diags.AddError("failed to hash with Argon2", fmt.Sprintf("failed to hash with Argon2: %s", err.Error()))
+			return
+		}
+	}
+	return computedHash, nil
+}
+
+func (f *File) setOwnerAndPermissionViaSFTP(ctx context.Context, sftpFile *sftp.File, rd resource_config.ResourceData) (diags diag.Diagnostics) {
+	if perm := rd.Permissions.ValueString(); perm != "" {
+		unixMode, err := strconv.ParseInt(perm, 0, 32)
+		if err != nil {
+			diags.AddError("failed to parse permission as an octal number", fmt.Sprintf("failed to parse permission as an octal number: %s", err.Error()))
+			return
+		}
+		if err := sftpFile.Chmod(os.FileMode(unixMode)); err != nil {
+			diags.AddError("failed to set permission on file", fmt.Sprintf("failed to set permission on file: %s", err.Error()))
+			return
+		}
+	}
+
+	if !rd.Owner.IsNull() && !rd.Owner.IsUnknown() && !rd.Group.IsNull() && !rd.Group.IsUnknown() {
+		var rdOwner owner.Owner
+		var rdGroup owner.Group
+		diags.Append(rd.Owner.As(ctx, &rdOwner, basetypes.ObjectAsOptions{})...)
+		if diags.HasError() {
+			return
+		}
+		diags.Append(rd.Group.As(ctx, &rdGroup, basetypes.ObjectAsOptions{})...)
+		if diags.HasError() {
+			return
+		}
+		if rdOwner.Name.ValueString() != "" {
+			diags.AddWarning("SFTP cannot set owners by name", "SFTP cannot set owners by name; please use UIDs")
+		}
+		if rdGroup.Name.ValueString() != "" {
+			diags.AddWarning("SFTP cannot set groups by name", "SFTP cannot set groups by name; please use GIDs")
+		}
+
+		var uid int64 = -1
+		var gid int64 = -1
+		if !rdOwner.UID.IsUnknown() || !rdOwner.UID.IsNull() {
+			uid = rdOwner.UID.ValueInt64()
+		}
+		if !rdGroup.GID.IsUnknown() || !rdGroup.GID.IsNull() {
+			gid = rdGroup.GID.ValueInt64()
+		}
+		if uid != -1 && gid != -1 {
+			if err := sftpFile.Chown(int(uid), int(gid)); err != nil {
+				diags.AddError("failed to chown file", fmt.Sprintf("failed to chown file: %s", err.Error()))
+				return
+			}
+		}
+	}
+	return
+}
+
+func (f *File) getOwnerAndPermissionsViaSFTP(ctx context.Context, sftpFile *sftp.File) (permissions types.String, ownerObj types.Object, groupObj types.Object, diags diag.Diagnostics) {
+	fi, err := sftpFile.Stat()
+	if err != nil {
+		diags.AddError("failed to stat file", fmt.Sprintf("failed to stat file: %s", err.Error()))
+		return
+	}
+	mode := fi.Mode()
+	permissions = basetypes.NewStringValue(fmt.Sprintf("%O", mode))
+
+	var ownerValue owner.Owner
+	var groupValue owner.Group
+	if statTFileInfo, ok := fi.Sys().(*sftp.FileStat); !ok {
+		diags.AddWarning("failed to get stat_t struct", fmt.Sprintf("failed to get stat_t struct; invalid type: %#v", fi.Sys()))
+	} else {
+		ownerValue = owner.Owner{
+			UID:  basetypes.NewInt64Value(int64(statTFileInfo.UID)),
+			Name: basetypes.NewStringNull(),
+		}
+		groupValue = owner.Group{
+			GID:  basetypes.NewInt64Value(int64(statTFileInfo.GID)),
+			Name: basetypes.NewStringNull(),
+		}
+	}
+	var objDiag diag.Diagnostics
+	ownerObj, objDiag = basetypes.NewObjectValueFrom(ctx, owner.Owner{}.AttributeTypes(), ownerValue)
+	diags.Append(objDiag...)
+	if diags.HasError() {
+		return
+	}
+	groupObj, objDiag = basetypes.NewObjectValueFrom(ctx, owner.Group{}.AttributeTypes(), groupValue)
+	diags.Append(objDiag...)
+	if diags.HasError() {
+		return
+	}
+	return
 }
 
 func (f *File) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
@@ -325,117 +527,86 @@ func (f *File) Create(ctx context.Context, req resource.CreateRequest, resp *res
 
 	mergedResourceData := plannedResourceData.Merge(configuredResourceData)
 
-	wdc, diags := f.getClients(mergedResourceData)
+	wdc, sftpc, diags := f.getClients(ctx, mergedResourceData)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	var identity *fileIdentity
-
+	var w io.Writer
+	ownerValue := basetypes.NewObjectNull(owner.Owner{}.AttributeTypes())
+	groupValue := basetypes.NewObjectNull(owner.Group{}.AttributeTypes())
+	permissions := basetypes.NewStringNull()
 	if wdc != nil {
-		if plannedResourceData.Permissions.ValueString() != "" {
+		if !mergedResourceData.Permissions.IsNull() && !mergedResourceData.Permissions.IsUnknown() {
 			resp.Diagnostics.AddWarning("ignored attribute", "ignored attribute: permissions attribute is not used with the WebDav connection type")
 		}
-		if plannedResourceData.Owner != nil {
+		if !mergedResourceData.Owner.IsNull() && !mergedResourceData.Permissions.IsUnknown() {
 			resp.Diagnostics.AddWarning("ignored attribute", "ignored attribute: owner attribute is not used with the WebDav connection type")
 		}
-		if plannedResourceData.Group != nil {
+		if !mergedResourceData.Group.IsNull() && !mergedResourceData.Permissions.IsUnknown() {
 			resp.Diagnostics.AddWarning("ignored attribute", "ignored attribute: group attribute is not used with the WebDav connection type")
 		}
 
-		wc, err := wdc.Create(ctx, plannedResourceData.Path.ValueString())
+		webDavFile, err := wdc.Create(ctx, mergedResourceData.Path.ValueString())
 		if err != nil {
 			resp.Diagnostics.AddError("failed to create file", fmt.Sprintf("failed to create file: %s", err.Error()))
 			return
 		}
-		defer wc.Close()
+		defer webDavFile.Close()
+		w = webDavFile
 
-		contentHash := sha512.New()
-
-		if !configuredResourceData.InlineContent.IsNull() {
-			contentByte := []byte(configuredResourceData.InlineContent.ValueString())
-			if n, err := wc.Write(contentByte); err != nil {
-				resp.Diagnostics.AddError("failed to write to new file", fmt.Sprintf("failed to write to new file: %s", err.Error()))
-				return
-			} else if len(contentByte) > n {
-				resp.Diagnostics.AddError("truncated write to new file", fmt.Sprintf("truncated write to new file: %d/%d", n, len(contentByte)))
-				return
-			}
-
-			if n, err := contentHash.Write(contentByte); err != nil {
-				resp.Diagnostics.AddError("failed to write to file hash", fmt.Sprintf("failed to write to file hash: %s", err.Error()))
-				return
-			} else if len(contentByte) > n {
-				resp.Diagnostics.AddError("truncated write to file hash", fmt.Sprintf("truncated write to file hash: %d/%d", n, len(contentByte)))
-				return
-			}
-		} else if !plannedResourceData.ContentFilePath.IsNull() {
-			f, err := os.Open(plannedResourceData.ContentFilePath.ValueString())
-			if err != nil {
-				resp.Diagnostics.AddError("failed to open file", fmt.Sprintf("failed to open file: %s", err.Error()))
-				return
-			}
-			defer f.Close()
-			for {
-				var buf [4096]byte
-				nr, err := f.Read(buf[:])
-				if err != nil {
-					if errors.Is(err, io.EOF) {
-						break
-					}
-					resp.Diagnostics.AddError("failed to read from file", fmt.Sprintf("failed to read from file: %s", err.Error()))
-					return
-				}
-
-				if nw, err := wc.Write(buf[:nr]); err != nil {
-					resp.Diagnostics.AddError("failed to write content to the server", fmt.Sprintf("failed to write content to the server: %s", err.Error()))
-					return
-				} else if nw < nr {
-					resp.Diagnostics.AddError("truncated write content to the server", fmt.Sprintf("truncated write content to the server: %d/%d", nw, nr))
-					return
-				}
-
-				if nw, err := contentHash.Write(buf[:nr]); err != nil {
-					resp.Diagnostics.AddError("failed to hash content", fmt.Sprintf("failed to hash content: %s", err.Error()))
-					return
-				} else if nw < nr {
-					resp.Diagnostics.AddError("truncated hashed content", fmt.Sprintf("truncated hashed content: %d/%d", nw, nr))
-					return
-				}
-			}
-		}
-
-		computedHash := hex.EncodeToString(contentHash.Sum(nil))
-		if hashSalt := plannedResourceData.HashSalt.ValueString(); hashSalt != "" {
-			computedHash, err = hashWithArgon2ID(computedHash, hashSalt)
-			if err != nil {
-				resp.Diagnostics.AddError("failed to hash with Argon2", fmt.Sprintf("failed to hash with Argon2: %s", err.Error()))
-				return
-			}
-		}
-
-		privDataBytes, err := json.Marshal(privateData{ContentHash: computedHash})
+	} else if sftpc != nil {
+		sftpFile, err := sftpc.OpenFile(mergedResourceData.Path.ValueString(), os.O_WRONLY|os.O_CREATE|os.O_EXCL)
 		if err != nil {
-			resp.Diagnostics.AddError("failed to marshal private data", fmt.Sprintf("failed to marshal private data: %s", err.Error()))
+			resp.Diagnostics.AddError("failed to create file", fmt.Sprintf("failed to create file: %s", err.Error()))
+			return
 		}
-		resp.Diagnostics.Append(resp.Private.SetKey(ctx, contentHashKey, privDataBytes)...)
+		defer sftpFile.Close()
+
+		resp.Diagnostics.Append(f.setOwnerAndPermissionViaSFTP(ctx, sftpFile, mergedResourceData)...)
 		if resp.Diagnostics.HasError() {
 			return
 		}
 
-		identity, err = newFileIdentityFromWebDav(plannedResourceData, f.providerData, plannedResourceData.HashSalt.ValueString())
-		if err != nil {
-			resp.Diagnostics.AddError("failed to generate identity", fmt.Sprintf("failed to generate identity: %s", err.Error()))
+		// The previous set might be noop if nothing was specified in the config/plan, so we always read what the server has
+		permissions, ownerValue, groupValue, diags = f.getOwnerAndPermissionsViaSFTP(ctx, sftpFile)
+		resp.Diagnostics.Append(diags...)
+		if resp.Diagnostics.HasError() {
 			return
 		}
+
+		w = sftpFile
 	}
 
+	computedHash, diags := f.writeToFileAndComputeHash(w, mergedResourceData)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	privDataBytes, err := json.Marshal(privateData{ContentHash: computedHash})
+	if err != nil {
+		resp.Diagnostics.AddError("failed to marshal private data", fmt.Sprintf("failed to marshal private data: %s", err.Error()))
+	}
+	resp.Diagnostics.Append(resp.Private.SetKey(ctx, contentHashKey, privDataBytes)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	identity, err := newFileIdentityFromWebDav(plannedResourceData, f.providerData, plannedResourceData.HashSalt.ValueString())
+	if err != nil {
+		resp.Diagnostics.AddError("failed to generate identity", fmt.Sprintf("failed to generate identity: %s", err.Error()))
+		return
+	}
 	resp.Diagnostics.Append(resp.Identity.Set(ctx, identity)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
+	plannedResourceData.Permissions = permissions
+	plannedResourceData.Owner = ownerValue
+	plannedResourceData.Group = groupValue
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plannedResourceData)...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -449,56 +620,77 @@ func (f *File) Read(ctx context.Context, req resource.ReadRequest, resp *resourc
 		return
 	}
 
-	wdc, diags := f.getClients(resourceData)
+	wdc, sftpc, diags := f.getClients(ctx, resourceData)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	var identity *fileIdentity
-
+	var rc io.ReadCloser
+	ownerValue := basetypes.NewObjectNull(owner.Owner{}.AttributeTypes())
+	groupValue := basetypes.NewObjectNull(owner.Group{}.AttributeTypes())
+	permissions := basetypes.NewStringNull()
 	if wdc != nil {
-		rc, err := wdc.Open(ctx, resourceData.Path.ValueString())
+		var err error
+		rc, err = wdc.Open(ctx, resourceData.Path.ValueString())
 		if err != nil {
 			resp.Diagnostics.AddError("failed to open file", fmt.Sprintf("failed to open file: %s", err.Error()))
 			return
 		}
 		defer rc.Close()
-
-		contentHash := sha512.New()
-		if _, err := io.Copy(contentHash, rc); err != nil {
-			resp.Diagnostics.AddError("failed to read file", fmt.Sprintf("failed to read file: %s", err.Error()))
+	} else if sftpc != nil {
+		var err error
+		sftpFile, err := sftpc.Open(resourceData.Path.ValueString())
+		if err != nil {
+			resp.Diagnostics.AddError("failed to open file", fmt.Sprintf("failed to open file: %s", err.Error()))
 			return
 		}
-		computedHash := hex.EncodeToString(contentHash.Sum(nil))
-		if hashSalt := resourceData.HashSalt.ValueString(); hashSalt != "" {
-			computedHash, err = hashWithArgon2ID(computedHash, hashSalt)
-			if err != nil {
-				resp.Diagnostics.AddError("failed to hash with Argon2", fmt.Sprintf("failed to hash with Argon2: %s", err.Error()))
-				return
-			}
-		}
-
-		privDataBytes, err := json.Marshal(privateData{ContentHash: computedHash})
-		if err != nil {
-			resp.Diagnostics.AddError("failed to marshal private data", fmt.Sprintf("failed to marshal private data: %s", err.Error()))
-		}
-		resp.Diagnostics.Append(resp.Private.SetKey(ctx, contentHashKey, privDataBytes)...)
+		defer sftpFile.Close()
+		permissions, ownerValue, groupValue, diags = f.getOwnerAndPermissionsViaSFTP(ctx, sftpFile)
+		resp.Diagnostics.Append(diags...)
 		if resp.Diagnostics.HasError() {
 			return
 		}
+		rc = sftpFile
+	}
 
-		identity, err = newFileIdentityFromWebDav(resourceData, f.providerData, resourceData.HashSalt.ValueString())
+	contentHash := sha512.New()
+	if _, err := io.Copy(contentHash, rc); err != nil {
+		resp.Diagnostics.AddError("failed to read file", fmt.Sprintf("failed to read file: %s", err.Error()))
+		return
+	}
+	computedHash := hex.EncodeToString(contentHash.Sum(nil))
+	if hashSalt := resourceData.HashSalt.ValueString(); hashSalt != "" {
+		var err error
+		computedHash, err = hashWithArgon2ID(computedHash, hashSalt)
 		if err != nil {
-			resp.Diagnostics.AddError("failed to generate identity", fmt.Sprintf("failed to generate identity: %s", err.Error()))
+			resp.Diagnostics.AddError("failed to hash with Argon2", fmt.Sprintf("failed to hash with Argon2: %s", err.Error()))
 			return
 		}
 	}
+	privDataBytes, err := json.Marshal(privateData{ContentHash: computedHash})
+	if err != nil {
+		resp.Diagnostics.AddError("failed to marshal private data", fmt.Sprintf("failed to marshal private data: %s", err.Error()))
+		return
+	}
+	resp.Diagnostics.Append(resp.Private.SetKey(ctx, contentHashKey, privDataBytes)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
 
+	identity, err := newFileIdentityFromWebDav(resourceData, f.providerData, resourceData.HashSalt.ValueString())
+	if err != nil {
+		resp.Diagnostics.AddError("failed to generate identity", fmt.Sprintf("failed to generate identity: %s", err.Error()))
+		return
+	}
 	resp.Diagnostics.Append(resp.Identity.Set(ctx, identity)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
+	resourceData.Permissions = permissions
+	resourceData.Owner = ownerValue
+	resourceData.Group = groupValue
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &resourceData)...)
 	if resp.Diagnostics.HasError() {
@@ -521,36 +713,59 @@ func (f *File) Update(ctx context.Context, req resource.UpdateRequest, resp *res
 
 	mergedResourceData := plannedResourceData.Merge(configuredResourceData)
 
-	wdc, diags := f.getClients(mergedResourceData)
+	wdc, sftpc, diags := f.getClients(ctx, mergedResourceData)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	var identity *fileIdentity
+	ownerValue := basetypes.NewObjectNull(owner.Owner{}.AttributeTypes())
+	groupValue := basetypes.NewObjectNull(owner.Group{}.AttributeTypes())
+	permissions := basetypes.NewStringNull()
 	if wdc != nil {
-		if plannedResourceData.Permissions.ValueString() != "" {
+		if !mergedResourceData.Permissions.IsNull() && !mergedResourceData.Permissions.IsUnknown() {
 			resp.Diagnostics.AddWarning("ignored attribute", "ignored attribute: permissions attribute is not used with the WebDav connection type")
 		}
-		if plannedResourceData.Owner != nil {
+		if !mergedResourceData.Owner.IsNull() && !mergedResourceData.Owner.IsUnknown() {
 			resp.Diagnostics.AddWarning("ignored attribute", "ignored attribute: owner attribute is not used with the WebDav connection type")
 		}
-		if plannedResourceData.Group != nil {
+		if !mergedResourceData.Group.IsNull() && !mergedResourceData.Group.IsUnknown() {
 			resp.Diagnostics.AddWarning("ignored attribute", "ignored attribute: group attribute is not used with the WebDav connection type")
 		}
-
-		var err error
-		identity, err = newFileIdentityFromWebDav(plannedResourceData, f.providerData, plannedResourceData.HashSalt.ValueString())
+	} else if sftpc != nil {
+		sftpFile, err := sftpc.Open(mergedResourceData.Path.ValueString())
 		if err != nil {
-			resp.Diagnostics.AddError("failed to generate identity", fmt.Sprintf("failed to generate identity: %s", err.Error()))
+			resp.Diagnostics.AddError("failed to open file", fmt.Sprintf("failed to open file: %s", err.Error()))
+			return
+		}
+		defer sftpFile.Close()
+
+		resp.Diagnostics.Append(f.setOwnerAndPermissionViaSFTP(ctx, sftpFile, mergedResourceData)...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+
+		// The previous set might be noop if nothing was specified in the config/plan, so we always read what the server has
+		permissions, ownerValue, groupValue, diags = f.getOwnerAndPermissionsViaSFTP(ctx, sftpFile)
+		resp.Diagnostics.Append(diags...)
+		if resp.Diagnostics.HasError() {
 			return
 		}
 	}
 
+	identity, err := newFileIdentityFromWebDav(mergedResourceData, f.providerData, mergedResourceData.HashSalt.ValueString())
+	if err != nil {
+		resp.Diagnostics.AddError("failed to generate identity", fmt.Sprintf("failed to generate identity: %s", err.Error()))
+		return
+	}
 	resp.Diagnostics.Append(resp.Identity.Set(ctx, identity)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
+	plannedResourceData.Permissions = permissions
+	plannedResourceData.Owner = ownerValue
+	plannedResourceData.Group = groupValue
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plannedResourceData)...)
 }
 
@@ -562,7 +777,7 @@ func (f *File) Delete(ctx context.Context, req resource.DeleteRequest, resp *res
 		return
 	}
 
-	wdc, diags := f.getClients(resourceData)
+	wdc, sftpc, diags := f.getClients(ctx, resourceData)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -570,6 +785,11 @@ func (f *File) Delete(ctx context.Context, req resource.DeleteRequest, resp *res
 
 	if wdc != nil {
 		if err := wdc.RemoveAll(ctx, resourceData.Path.ValueString()); err != nil {
+			resp.Diagnostics.AddError("failed to delete file", fmt.Sprintf("failed to delete file: %s", err.Error()))
+			return
+		}
+	} else if sftpc != nil {
+		if err := sftpc.RemoveAll(resourceData.Path.ValueString()); err != nil {
 			resp.Diagnostics.AddError("failed to delete file", fmt.Sprintf("failed to delete file: %s", err.Error()))
 			return
 		}
@@ -614,6 +834,8 @@ func (f *File) ImportState(ctx context.Context, req resource.ImportStateRequest,
 	rs.Path = basetypes.NewStringValue(parsedURL.Path)
 	rs.Keepers = basetypes.NewMapNull(types.StringType)
 	rs.HashSalt = fi.HashSalt
+	rs.Owner = basetypes.NewObjectNull(owner.Owner{}.AttributeTypes())
+	rs.Group = basetypes.NewObjectNull(owner.Group{}.AttributeTypes())
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &rs)...)
 }

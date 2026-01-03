@@ -81,13 +81,63 @@ EOT
 
 ### Optional
 
+- `sftp` (Attributes) sftp specifies the connection information required to access the managed resource over SFTP.
+
+If the managed resource is accessed over SFTP and this configuration value is not specified, the resource level connection info must be specified instead.
+
+At most one connection type must be specified.
+
+If the connection information is provided both at the provider level and at the resource level, the resource level information is preferred and used. (see [below for nested schema](#nestedatt--sftp))
 - `webdav` (Attributes) webdav specifies the connection information required to access the managed resource over WebDAV.
 
 If the managed resource is accessed over WebDAV and this configuration value is not specified, the resource level connection info must be specified instead.
 
-At most one connection type must be specified. Currently, only WebDAV is supported.
+At most one connection type must be specified.
 
 If the connection information is provided both at the provider level and at the resource level, the resource level information is preferred and used. (see [below for nested schema](#nestedatt--webdav))
+
+<a id="nestedatt--sftp"></a>
+### Nested Schema for `sftp`
+
+Required:
+
+- `address` (String)
+- `username` (String)
+
+Optional:
+
+- `agent_sock_path` (String)
+- `known_hosts_entries` (List of String)
+- `known_hosts_files` (List of String)
+- `password` (String, Sensitive)
+- `port` (Number)
+- `private_key` (String, Sensitive)
+- `private_key_passphrase` (String, Sensitive)
+- `private_key_path` (String)
+- `use_agent` (Boolean)
+- `use_known_hosts` (Boolean)
+- `use_sshfp` (List of Object) (see [below for nested schema](#nestedatt--sftp--use_sshfp))
+
+<a id="nestedatt--sftp--use_sshfp"></a>
+### Nested Schema for `sftp.use_sshfp`
+
+Optional:
+
+- `ca_cert` (String)
+- `ca_cert_path` (String)
+- `resolvers` (List of Object) (see [below for nested schema](#nestedobjatt--sftp--use_sshfp--resolvers))
+
+<a id="nestedobjatt--sftp--use_sshfp--resolvers"></a>
+### Nested Schema for `sftp.use_sshfp.resolvers`
+
+Optional:
+
+- `address` (String)
+- `port` (Number)
+- `protocol` (String)
+
+
+
 
 <a id="nestedatt--webdav"></a>
 ### Nested Schema for `webdav`
