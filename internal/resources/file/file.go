@@ -22,6 +22,7 @@ import (
 	"github.com/X-Cli/terraform-provider-remotefs/internal/resources/helpers/owner"
 	sftp_config "github.com/X-Cli/terraform-provider-remotefs/internal/resources/helpers/sftp"
 	webdav_resource "github.com/X-Cli/terraform-provider-remotefs/internal/resources/helpers/webdav"
+	sftp_validator "github.com/X-Cli/terraform-provider-remotefs/internal/validators/sftp"
 	webdav_validator "github.com/X-Cli/terraform-provider-remotefs/internal/validators/webdav"
 	webdav_client "github.com/emersion/go-webdav"
 	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
@@ -158,9 +159,9 @@ If this configuration value not the webdav value are not specified, the value de
 Exactly one connection type must be specified.
 
 If the connection information is provided both at the provider level and at the resource level, the resource level information is preferred and used.`,
-				Optional:   true,
+				Optional: true,
 				Validators: []validator.Object{
-					// TODO validator
+					&sftp_validator.Validator{},
 				},
 			},
 			"keepers": schema.MapAttribute{
@@ -328,8 +329,6 @@ Only one of the name and gid properties can be set at the same time.
 		},
 	}
 }
-
-// TODO ajotuer un validateur qui s'assure que si webdav est utilisé, alors permissions owner et group doivent être nil et si sftp est utilisé owner.name et group.name sont nil
 
 func (f *File) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
 	if req.ProviderData != nil {
