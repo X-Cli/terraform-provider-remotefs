@@ -4,6 +4,7 @@
 package sftp
 
 import (
+	"github.com/X-Cli/terraform-provider-remotefs/internal/validators/files"
 	"github.com/X-Cli/terraform-provider-remotefs/internal/validators/knownhosts"
 	"github.com/X-Cli/terraform-provider-remotefs/internal/validators/sshfp"
 	"github.com/hashicorp/terraform-plugin-framework-validators/boolvalidator"
@@ -139,8 +140,8 @@ var ConnSpec = map[string]schema.Attribute{
 			),
 			stringvalidator.AlsoRequires(
 				path.MatchRelative().AtParent().AtName("use_agent"),
-				// TODO check path exists
 			),
+			&files.FileValidator{},
 		},
 	},
 	"use_known_hosts": schema.BoolAttribute{
