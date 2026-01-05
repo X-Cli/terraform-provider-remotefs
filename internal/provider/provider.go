@@ -307,28 +307,39 @@ If the managed resource is accessed over SFTP and this configuration value is no
 
 At most one connection type must be specified.
 
-If the connection information is provided both at the provider level and at the resource level, the resource level information is preferred and used.`,
+If the connection information is provided both at the provider level and at the resource level, the resource level information is preferred and used.
+`,
 				Optional: true,
 				Attributes: map[string]schema.Attribute{
 					"address": schema.StringAttribute{
-						Description: ``,
-						Required:    true,
+						Description: `address specifies the domain name or IP address of the host to connect to over SFTP.
+
+If a domain name is specified and SSHFP is configured for the SSH host key verification, this domain name is queried for SSHFP records.
+`,
+						Required: true,
 					},
 					"port": schema.Int32Attribute{
-						Description: ``,
-						Optional:    true,
+						Description: `port specifies the port number to connect to.
+
+If this attribute is left unspecified, the provider will connect to port 22.
+`,
+						Optional: true,
 						Validators: []validator.Int32{
 							int32validator.Between(1, 65535),
 						},
 					},
 					"username": schema.StringAttribute{
-						Description: ``,
-						Required:    true,
+						Description: `username specifies the name of the user to login as.
+`,
+						Required: true,
 					},
 					"password": schema.StringAttribute{
-						Description: ``,
-						Optional:    true,
-						Sensitive:   true,
+						Description: `password specifies the password used to authenticate to the SFTP server.
+
+Exactly one of the password, private_key, private_key_path or use_agent attributes must be specified.
+`,
+						Optional:  true,
+						Sensitive: true,
 						Validators: []validator.String{
 							stringvalidator.ConflictsWith(
 								path.MatchRelative().AtParent().AtName("private_key"),
@@ -345,9 +356,14 @@ If the connection information is provided both at the provider level and at the 
 						},
 					},
 					"private_key": schema.StringAttribute{
-						Description: ``,
-						Optional:    true,
-						Sensitive:   true,
+						Description: `private_key specifies the private key to use to authenticate to the SFTP server.
+
+The private key may be encrypted. If so, the private_key_passphrase attribute must be specified.
+
+Exactly one of the password, private_key, private_key_path or use_agent attributes must be specified.
+`,
+						Optional:  true,
+						Sensitive: true,
 						Validators: []validator.String{
 							stringvalidator.ConflictsWith(
 								path.MatchRelative().AtParent().AtName("password"),
@@ -363,7 +379,7 @@ If the connection information is provided both at the provider level and at the 
 						},
 					},
 					"private_key_passphrase": schema.StringAttribute{
-						Description: ``,
+						Description: `private_key_passphrase specifies the passphrase to use to decrypt the private key specified with the private_key or private_key_path attributes.`,
 						Optional:    true,
 						Sensitive:   true,
 						Validators: []validator.String{
@@ -383,8 +399,13 @@ If the connection information is provided both at the provider level and at the 
 						},
 					},
 					"private_key_path": schema.StringAttribute{
-						Description: ``,
-						Optional:    true,
+						Description: `private_key_path specifies the path of a file containing the private key to use to authenticate to the SFP server.
+
+The private key may be encrypted. If so, the private_key_passphrase attribute must be specified.
+
+Exactly one of the password, private_key, private_key_path or use_agent attributes must be specified.
+`,
+						Optional: true,
 						Validators: []validator.String{
 							stringvalidator.ConflictsWith(
 								path.MatchRelative().AtParent().AtName("password"),
@@ -400,8 +421,11 @@ If the connection information is provided both at the provider level and at the 
 						},
 					},
 					"use_agent": schema.BoolAttribute{
-						Description: ``,
-						Optional:    true,
+						Description: `use_agent specifies that a SSH agent should be used to authenticate to the SFTP server.
+
+Exactly one of the password, private_key, private_key_path or use_agent attributes must be specified.
+`,
+						Optional: true,
 						Validators: []validator.Bool{
 							boolvalidator.ConflictsWith(
 								path.MatchRelative().AtParent().AtName("password"),
@@ -417,8 +441,11 @@ If the connection information is provided both at the provider level and at the 
 						},
 					},
 					"agent_sock_path": schema.StringAttribute{
-						Description: ``,
-						Optional:    true,
+						Description: `agent_sock_path enables specifying the path to the SSH agent socket.
+
+If this attribute is not specified and use_agent is set, the SSH_AUTH_SOCK environment variable is used to determine the socket path.
+`,
+						Optional: true,
 						Validators: []validator.String{
 							stringvalidator.ConflictsWith(
 								path.MatchRelative().AtParent().AtName("password"),
@@ -432,8 +459,13 @@ If the connection information is provided both at the provider level and at the 
 						},
 					},
 					"use_known_hosts": schema.BoolAttribute{
-						Description: ``,
-						Optional:    true,
+						Description: `use_known_hosts specifies that the $HOME/.ssh/known_hosts file should be used to verify the SSH server host key.
+
+At least one of use_known_hosts, known_hosts_files, known_hosts_entries or use_sshfp must be specified.
+
+Not verifying the SSH host key is not an option for security reasons. If you don't know the expected SSH host key, please find it out in a secure manner. For a newly provisionned virtual machine, you may want to take a peek at the X-Cli/ssh2vsock provider to perform a secure ssh-keyscan.
+`,
+						Optional: true,
 						Validators: []validator.Bool{
 							boolvalidator.AtLeastOneOf(
 								path.MatchRelative().AtParent().AtName("known_hosts_files"),
@@ -444,7 +476,14 @@ If the connection information is provided both at the provider level and at the 
 						},
 					},
 					"known_hosts_files": schema.ListAttribute{
-						Description: ``,
+						Description: `known_hosts_file specifies a list of pathes to files whose content are similar to $HOME/.ssh/known_hosts.
+
+This enables you to use known_hosts files stored at a non-standard location or different known_hosts file per client/provider.
+
+At least one of use_known_hosts, known_hosts_files, known_hosts_entries or use_sshfp must be specified.
+
+Not verifying the SSH host key is not an option for security reasons. If you don't know the expected SSH host key, please find it out in a secure manner. For a newly provisionned virtual machine, you may want to take a peek at the X-Cli/ssh2vsock provider to perform a secure ssh-keyscan.
+`,
 						Optional:    true,
 						ElementType: types.StringType,
 						Validators: []validator.List{
@@ -457,7 +496,14 @@ If the connection information is provided both at the provider level and at the 
 						},
 					},
 					"known_hosts_entries": schema.ListAttribute{
-						Description: ``,
+						Description: `known_hosts_entries specifies a list of strings whose content is similar to a line in a known_hosts file.
+
+This attribute can be used, for instance, to specify the host keys of a newly provisionned virtual machine whose public key was discovered using the X-Cli/ssh2vsock provider, or some other way.
+
+At least one of use_known_hosts, known_hosts_files, known_hosts_entries or use_sshfp must be specified.
+
+Not verifying the SSH host key is not an option for security reasons. If you don't know the expected SSH host key, please find it out in a secure manner. For a newly provisionned virtual machine, you may want to take a peek at the X-Cli/ssh2vsock provider to perform a secure ssh-keyscan.
+`,
 						Optional:    true,
 						ElementType: types.StringType,
 						Validators: []validator.List{
@@ -470,8 +516,23 @@ If the connection information is provided both at the provider level and at the 
 						},
 					},
 					"use_sshfp": schema.ListAttribute{
-						Description: ``,
-						Optional:    true,
+						Description: `use_sshfp specifies ways to verify the SSH host key by querying the DNS for SSHFP records.
+
+Resolvers are designated by their IP address, their port number and the protocol to use to query them.
+
+Supported protocols are "dns" (classic DNS protocol), "dot" (for DNS over TLS) and "doh" (for DNS over HTTPS).
+
+DNS answers MUST have been verified with DNSSEC and the AD bit (authenticated data) is expected, for security reasons.
+
+Unless you specify a local DNS resolver or a DNS resolver reached over a protected channel like a Wireguard tunnel, please consider using a secure DNS protocol like DoT or DoH. Failing to do so means you cannot trust the AD bit and a MITM attack could be perform against your connection.
+
+For resolvers queried over a secure protocol (DoT or DoH), a list of certificate authorities MUST be specified to verify the server X.509 certificate. If you are using a public DNS resolver, it is likely that the certificates specified in /etc/ssl/certs/ca-certificates.crt are sufficient.
+
+At least one of use_known_hosts, known_hosts_files, known_hosts_entries or use_sshfp must be specified.
+
+Not verifying the SSH host key is not an option for security reasons. If you don't know the expected SSH host key, please find it out in a secure manner. For a newly provisionned virtual machine, you may want to take a peek at the X-Cli/ssh2vsock provider to perform a secure ssh-keyscan. The SSHFP record can then be pushed over RFC2136 using the hashicorp/dns provider.
+`,
+						Optional: true,
 						ElementType: types.ObjectType{
 							AttrTypes: map[string]attr.Type{
 								"resolvers": types.ListType{
