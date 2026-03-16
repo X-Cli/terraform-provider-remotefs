@@ -1,4 +1,4 @@
-// Copyright (c) Florian Maury
+// Copyright Florian Maury 2025, 2026
 // SPDX-License-Identifier: BSD-2-Clause
 
 // Package file implements the remotefs_file resource type

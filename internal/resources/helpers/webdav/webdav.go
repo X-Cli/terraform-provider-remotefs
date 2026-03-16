@@ -1,4 +1,4 @@
-// Copyright (c) Florian Maury
+// Copyright Florian Maury 2025, 2026
 // SPDX-License-Identifier: BSD-2-Clause
 
 // Package webdav specifies the map used to specify the common schema of the webdav attribute for the remotefs_directory and remotefs_file resource types
