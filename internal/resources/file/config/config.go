@@ -1,4 +1,4 @@
-// Copyright (c) Florian Maury
+// Copyright Florian Maury 2025, 2026
 // SPDX-License-Identifier: BSD-2-Clause
 
 // Package config specifies the data structure for the remotefs_file resource type.

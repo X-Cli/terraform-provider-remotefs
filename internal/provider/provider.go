@@ -1,4 +1,4 @@
-// Copyright (c) Florian Maury
+// Copyright Florian Maury 2025, 2026
 // SPDX-License-Identifier: BSD-2-Clause
 
 // Package provider implements the remotefs provider to interact with a remote filesystems over diverse network protocols.
