@@ -17,7 +17,7 @@ jobs:
     runs-on: renovate-at-home
     steps:
       - name: Load renovate repo cache
-        uses: https://code.forgejo.org/actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        uses: https://code.forgejo.org/actions/cache/restore@v5
         with:
           path: |
             .tmp/cache/renovate/repository
@@ -34,7 +34,7 @@ jobs:
       - name: Run Self-hosted Renovate
         run: renovate --token "${{ secrets.TOKEN }}" --platform forgejo --endpoint "${{ env.FORGEJO_SERVER_URL }}" "${{ env.FORGEJO_REPOSITORY }}"
       - name: Save renovate repo cache
-        uses: https://code.forgejo.org/actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        uses: https://code.forgejo.org/actions/cache/save@v5
         with:
           path: |
             .tmp/cache/renovate/repository
