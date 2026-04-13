@@ -1,6 +1,6 @@
 module github.com/X-Cli/terraform-provider-remotefs
 
-go 1.26.1
+go 1.26.2
 
 require (
 	codeberg.org/X_Cli/sshhostkey v0.0.1
