@@ -33,6 +33,8 @@ jobs:
           repo-sha256: false
       - name: Run Self-hosted Renovate
         run: renovate --token "${{ secrets.TOKEN }}" --platform forgejo --endpoint "${{ env.FORGEJO_SERVER_URL }}" "${{ env.FORGEJO_REPOSITORY }}"
+        env:
+          GITHUB_COM_TOKEN: "${{ secrets.RENOVATE_GITHUB_COM_TOKEN }}"
       - name: Save renovate repo cache
         uses: https://code.forgejo.org/actions/cache/save@v5
         with:
