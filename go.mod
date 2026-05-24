@@ -3,7 +3,7 @@ module github.com/X-Cli/terraform-provider-remotefs
 go 1.26.3
 
 require (
-	codeberg.org/X_Cli/sshhostkey v0.0.1
+	codeberg.org/X_Cli/sshhostkey v0.0.2
 	github.com/edsrzf/mmap-go v1.2.0
 	github.com/emersion/go-webdav v0.7.0
 	github.com/hashicorp/go-version v1.9.0
@@ -19,7 +19,7 @@ require (
 )
 
 require (
-	codeberg.org/miekg/dns v0.6.6 // indirect
+	codeberg.org/miekg/dns v0.6.79 // indirect
 	dario.cat/mergo v1.0.1 // indirect
 	github.com/AlecAivazis/survey/v2 v2.3.7 // indirect
 	github.com/BurntSushi/toml v1.4.0 // indirect
@@ -114,7 +114,7 @@ require (
 	github.com/zclconf/go-cty v1.18.1 // indirect
 	go.abhg.dev/goldmark/frontmatter v0.2.0 // indirect
 	go.mongodb.org/mongo-driver v1.10.0 // indirect
-	golang.org/x/exp v0.0.0-20250620022241-b7579e27df2b // indirect
+	golang.org/x/exp v0.0.0-20260218203240-3dfff04db8fa // indirect
 	golang.org/x/mod v0.35.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
