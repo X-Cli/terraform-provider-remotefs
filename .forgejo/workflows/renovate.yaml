@@ -28,7 +28,7 @@ jobs:
             repo-cache-
       - id: checkout
         name: Checkout repository
-        uses: https://code.forgejo.org/actions/checkout@v6
+        uses: https://code.forgejo.org/actions/checkout@v7
         with:
           repo-sha256: false
       - name: Run Self-hosted Renovate
